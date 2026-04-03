@@ -4,153 +4,102 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Zafer83/glimpse)](https://golang.org/doc/devel/release.html)
 
-**Glimpse** is a powerful AI-driven CLI tool written in Go that automatically transforms your source code into professional [Slidev](https://sli.dev/) presentations. It uses Large Language Models to analyze your project's logic, highlight key snippets, and generate architectural visualizations.
-
----
+**Glimpse** is an AI-driven Go CLI that turns source code into professional [Slidev](https://sli.dev/) presentations.
 
 ## 🚀 Features
 
-- **AI-Powered Analysis:** Leverages OpenAI (GPT-4o) to understand code intent and architectural patterns.
-- **Developer-Centric:** Designed specifically for technical deep-dives and documentation.
-- **Slidev Ready:** Generates `.md` files that work out-of-the-box with the Slidev ecosystem.
-- **Smart Context Crawling:** Efficiently scans your project while ignoring `node_modules`, `.git`, and build artifacts.
-- **Visual Diagrams:** Automatically generates **Mermaid.js** charts (sequence, flow, or class diagrams) based on your code.
-- **Highly Configurable:** Use `.env` files or CLI flags to customize themes, models, and languages.
-
----
+- Interactive CLI flow for all inputs (path, theme, model, language, output, API key)
+- OpenAI and Gemini support
+- Automatic Gemini model resolution/fallback when a requested model is unavailable
+- Slidev-ready Markdown output with architecture-focused summaries and Mermaid diagrams
+- Recursive code crawling with common folders ignored (`.git`, `node_modules`, build artifacts)
 
 ## 🛠️ Installation
 
-### 1. Clone the repository
+### 1. Clone
+
 ```bash
-git clone [https://github.com/Zafer83/glimpse](https://github.com/Zafer83/glimpse)
+git clone https://github.com/Zafer83/glimpse
 cd glimpse
 ```
 
 ### 2. Install dependencies
 
-``` bash
+```bash
 go mod tidy
 ```
 
-## 3. Build the tool
+### 3. Build
 
-``` bash
+```bash
 go build -o glimpse ./cmd/glimpse
 ```
 
-------------------------------------------------------------------------
-
-## ⚙️ Configuration
-
-Glimpse uses environment variables for configuration. Create a `.env`
-file in the root directory:
-
-``` env
-OPENAI_API_KEY=your_openai_api_key_here
-GLIMPSE_THEME=seriph
-GLIMPSE_MODEL=gpt-4o
-GLIMPSE_LANGUAGE=en
-GLIMPSE_OUTPUT=slides.md
-```
-
-### Configuration Options
-
-  -----------------------------------------------------------------------------
-Variable           Description                                    Default
-  ------------------ ---------------------------------------------- -----------
-OPENAI_API_KEY     Your OpenAI API Key (Required)                 \-
-
-GLIMPSE_THEME      The Slidev theme to apply                      seriph
-
-GLIMPSE_MODEL      OpenAI Model (e.g., gpt-4o, gpt-3.5-turbo)     gpt-4o
-
-GLIMPSE_LANGUAGE   Output language for the slides (en, de, etc.)  en
-
-GLIMPSE_OUTPUT     The filename for the generated Markdown        slides.md
------------------------------------------------------------------------------
-
-------------------------------------------------------------------------
-
 ## 📖 Usage
 
-Point Glimpse to any directory containing source code (e.g., `./src`).
+Run the binary and answer prompts:
 
-``` bash
-# Using the compiled binary
-./glimpse -path ./src -out my-presentation.md
-
-# Using go run
-go run ./cmd/glimpse/main.go -path ./src
+```bash
+./glimpse
 ```
 
-### Viewing the Slides
+Or run directly with Go:
 
-Once Glimpse has generated your file, you can view it immediately using
-Slidev:
+```bash
+go run ./cmd/glimpse/main.go
+```
 
-``` bash
+The CLI asks for:
+
+1. `Project Path`
+2. `Slidev Theme`
+3. `AI Model (gpt-4o or gemini-1.5-pro)`
+4. `Language`
+5. `File Name`
+6. `API Key (OpenAI/Gemini)`
+
+### Provider selection
+
+- If model starts with `gemini` (or `models/gemini...`), Glimpse uses Gemini.
+- Otherwise, Glimpse uses OpenAI.
+
+### Path autocompletion
+
+- In a standard terminal (`Terminal`, `iTerm`, etc.), `Project Path` supports `Tab` completion.
+- In some embedded IDE terminals, line-editing is disabled automatically for stability.
+
+## ✅ Example models
+
+- OpenAI: `gpt-4o`
+- Gemini: `gemini-1.5-pro`, `gemini-2.0-flash`
+
+## 👀 View the generated slides
+
+```bash
 npx slidev slides.md
 ```
 
-------------------------------------------------------------------------
+## 📂 Project structure
 
-## 📂 Project Structure
-
-``` plaintext
+```text
 glimpse/
-├── cmd/glimpse/       # Entry point for the CLI
+├── cmd/glimpse/       # CLI entry point
 ├── internal/
-│   ├── ai/            # OpenAI API integration
-│   ├── config/        # Environment and flag management
-│   └── crawler/       # File system scanning logic
-├── .env               # Local configuration (Git ignored)
-└── README.md          # You are here!
+│   ├── ai/            # OpenAI/Gemini integration
+│   ├── config/        # Shared config struct
+│   └── crawler/       # File system scanning
+└── README.md
 ```
-
-------------------------------------------------------------------------
 
 ## 🛡️ Security & Privacy
 
-Glimpse scans your local files but only sends the code content to the AI
-provider (OpenAI) for analysis.
-
--   It automatically ignores sensitive folders like `.git` and
-    `node_modules`.
--   **Note:** Ensure your `.env` file is never committed to version
-    control.
-
-------------------------------------------------------------------------
+- Glimpse scans local files and sends code content to the selected AI provider (OpenAI or Gemini).
+- Do not commit API keys.
 
 ## 📄 License
 
-This project is licensed under the Apache-2.0 license. See the `LICENSE` file
-for details.
-
-------------------------------------------------------------------------
+This project is licensed under Apache-2.0. See [LICENSE](./LICENSE).
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/Zafer83/glimpse/issues).
-
-To contribute, please follow these steps:
-
-1. **Fork the Project**
-2. **Create your Feature Branch**
-
-    ``` bash
-    git checkout -b feature/AmazingFeature
-    ```
-3. **Commit your Changes**
-
-    ``` bash
-    git commit -m 'Add some AmazingFeature'
-    ```
-
-4. **Push to the Branch**
-
-    ``` bash
-    git push origin feature/AmazingFeature
-    ```
-
-5. **Open a Pull Request**
+Contributions and issues are welcome: [issues page](https://github.com/Zafer83/glimpse/issues).
