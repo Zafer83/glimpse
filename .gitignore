@@ -1,0 +1,11 @@
+# Binaries
+glimpse
+*.exe
+
+# Keys & Config
+.env
+
+# Slidev / Node
+node_modules/
+dist/
+slides.md
