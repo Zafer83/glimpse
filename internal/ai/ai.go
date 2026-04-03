@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Zafer83/glimpse/internal/config"
+	"github.com/sashabaranov/go-openai"
 )
 
 func GenerateSlides(cfg *config.Config, code string) (string, error) {

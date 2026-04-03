@@ -9,3 +9,8 @@ glimpse
 node_modules/
 dist/
 slides.md
+
+# IDE & Temporary files
+.idea/
+go.import.xml
+*.iml
