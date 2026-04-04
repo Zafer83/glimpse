@@ -29,17 +29,44 @@ func GenerateSlides(cfg *config.Config, code string) (string, error) {
 	codeForPrompt, truncNote := prepareCodeForModel(code, cfg.Model)
 
 	systemPrompt := fmt.Sprintf(
-		"You are Glimpse, an expert AI architect. Your task is to generate a professional "+
-			"Slidev presentation from the provided source code in %s language.", cfg.Language)
+		"You are Glimpse, an expert AI architect. Generate a professional Slidev "+
+			"presentation from source code. Write all slide content in %s.", cfg.Language)
 
 	userPrompt := fmt.Sprintf(
-		"Create a high-quality Slidev Markdown presentation.\n"+
-			"- Theme: '%s'\n"+
-			"- Highlight core business logic and architectural patterns.\n"+
-			"- Use code blocks with focus markers (e.g., {1-5|7-10}).\n"+
-			"- Include at least one Mermaid.js diagram to visualize the flow.\n"+
-			"- Return ONLY the raw Markdown content.\n"+
-			"%s\nSOURCE CODE:\n%s",
+		`Create a Slidev Markdown presentation from the source code below.
+
+CRITICAL FORMAT RULES — the output MUST follow this structure exactly:
+
+1. The file MUST start with a YAML frontmatter block as the very first thing.
+   This block sets the global theme and title:
+
+---
+theme: %s
+title: <a short descriptive title>
+---
+
+2. Each subsequent slide is separated by a line containing only "---".
+   Slides MAY have their own per-slide frontmatter for layout, background, or class:
+
+---
+layout: center
+class: text-white
+---
+
+3. Valid layout values include: default, center, cover, two-cols, image-right, image-left, fact, statement, quote, section.
+
+CONTENT GUIDELINES:
+- Start with a cover slide (layout: cover) summarizing the project.
+- Highlight core business logic and architectural patterns.
+- Use fenced code blocks with Slidev focus markers, e.g. {1-5|7-10}.
+- Include at least one Mermaid diagram (use a fenced mermaid block).
+- End with a summary or key-takeaways slide.
+- Aim for 8-15 slides total.
+
+Return ONLY the raw Markdown content. No wrapping in a code fence. No explanation before or after.
+%s
+SOURCE CODE:
+%s`,
 		cfg.Theme, truncNote, codeForPrompt)
 
 	// Provider routing is model-name based to keep the CLI model input simple.
