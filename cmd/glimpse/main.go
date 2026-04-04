@@ -42,7 +42,6 @@ import (
 )
 
 // --- Constants ---
-
 const (
 	loaderTickInterval    = 110 * time.Millisecond
 	plainLoaderInterval   = 300 * time.Millisecond
@@ -83,7 +82,6 @@ var (
 )
 
 // --- Version helpers ---
-
 func normalizeTripletVersion(raw string) (string, bool) {
 	m := semverTripletRe.FindStringSubmatch(strings.TrimSpace(raw))
 	if len(m) != 4 {
@@ -113,7 +111,6 @@ func shortBannerVersion(full string) string {
 }
 
 // --- Terminal setup ---
-
 func initTerminalAppearance() {
 	if forcePlainMode == "1" {
 		ansiEnabled = false
@@ -164,7 +161,6 @@ func isInterruptErr(err error) bool {
 }
 
 // --- Git helpers ---
-
 func gitOutput(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	out, err := cmd.Output()
@@ -201,7 +197,6 @@ func autoVersionFromGit() (string, bool) {
 }
 
 // --- User input ---
-
 func askBuffered(reader *bufio.Reader, prompt, defaultValue string) string {
 	fullPrompt := fmt.Sprintf("%s%s%s %s[%s]%s: ", ColorBold, ColorCyan, prompt, ColorYellow, defaultValue, ColorReset)
 	fmt.Print(fullPrompt)
@@ -277,7 +272,6 @@ func promptInputReader() (*bufio.Reader, io.Closer) {
 }
 
 // --- Slidev theme helpers ---
-
 func uniqueStrings(items []string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -368,7 +362,6 @@ func ensureSlidevTheme(theme string) error {
 }
 
 // --- Progress loader ---
-
 func startFancyLoader(message string, profile termenv.Profile, startColor, endColor colorful.Color) func(doneText string) {
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -453,9 +446,18 @@ func startFancyLoader(message string, profile termenv.Profile, startColor, endCo
 	return func(doneText string) {
 		close(stop)
 		<-done
-		finalBar := strings.Repeat("█", progressBarWidth)
 		if ansiEnabled {
-			fmt.Printf("\r\033[2K%sProgress%s [%s] 100.0%% | ETA 0s | %s\n", ColorBlue, ColorReset, finalBar, doneText)
+			var finalBar strings.Builder
+			denominator := progressBarWidth - 1
+			if denominator <= 0 {
+				denominator = 1
+			}
+			for i := 0; i < progressBarWidth; i++ {
+				ratio := float64(i) / float64(denominator)
+				gradColor := startColor.BlendLuv(endColor, ratio).Hex()
+				finalBar.WriteString(termenv.String("█").Foreground(profile.Color(gradColor)).String())
+			}
+			fmt.Printf("\r\033[2K%sProgress%s [%s] 100.0%% | ETA 0s | %s\n", ColorBlue, ColorReset, finalBar.String(), doneText)
 		} else {
 			fmt.Printf("\rProgress: 100.0%% | ETA 0s | %s\n", doneText)
 		}
@@ -464,7 +466,6 @@ func startFancyLoader(message string, profile termenv.Profile, startColor, endCo
 }
 
 // --- Banner ---
-
 func renderBanner(v string, profile termenv.Profile, startColor, endColor colorful.Color) {
 	banner := `
    █████████  █████       █████ ██████   ██████ ███████████   █████████  ██████████
@@ -513,7 +514,6 @@ func renderBanner(v string, profile termenv.Profile, startColor, endColor colorf
 }
 
 // --- User config prompting ---
-
 func promptUserConfig(line *liner.State, reader *bufio.Reader) *config.Config {
 	if line != nil {
 		line.SetCompleter(func(input string) (c []string) {
@@ -575,7 +575,6 @@ func promptUserConfig(line *liner.State, reader *bufio.Reader) *config.Config {
 }
 
 // --- Code processing ---
-
 func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, endColor colorful.Color) {
 	fmt.Printf("\n%s🔍 Scanning files in: %s%s%s\n", ColorBlue, ColorBold, cfg.ProjectPath, ColorReset)
 	code, err := crawler.CollectCode(cfg.ProjectPath)
@@ -602,7 +601,6 @@ func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, en
 }
 
 // --- Slidev launch ---
-
 func promptAndLaunchSlidev(line *liner.State, reader *bufio.Reader, output string) {
 	runSlidev := strings.ToLower(strings.TrimSpace(ask(line, reader, "Start Slidev now? (Y/n)", "Y")))
 	if runSlidev != "y" && runSlidev != "yes" && runSlidev != "" {
@@ -627,7 +625,6 @@ func promptAndLaunchSlidev(line *liner.State, reader *bufio.Reader, output strin
 }
 
 // --- Main ---
-
 func main() {
 	initTerminalAppearance()
 	v := resolvedVersion()
