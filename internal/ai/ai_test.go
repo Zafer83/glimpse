@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Zafer83/glimpse/internal/config"
+	"github.com/Zafer83/glimpse/internal/crawler"
 )
 
 func TestRenderPrompt(t *testing.T) {
@@ -112,7 +113,47 @@ func TestNormalizeSlidevMarkdown(t *testing.T) {
 			if !strings.HasPrefix(got, "---\n") {
 				t.Errorf("output must start with frontmatter:\n%s", got)
 			}
+			// Must always contain layout
+			if !strings.Contains(got, "layout:") {
+				t.Errorf("output must contain layout:\n%s", got)
+			}
 		})
+	}
+}
+
+func TestNormalizeSlidevMarkdown_CoverLayout(t *testing.T) {
+	raw := "---\ntheme: seriph\nlayout: cover\nauthor: Zafer\ntitle: My Project\n---\n\n# My Project\n\nDescription"
+	cfg := &config.Config{Theme: "seriph"}
+	got := normalizeSlidevMarkdown(raw, cfg)
+
+	if !strings.Contains(got, "layout: cover") {
+		t.Error("expected layout: cover in output")
+	}
+	if !strings.Contains(got, "author: 'Zafer'") {
+		t.Errorf("expected author in output:\n%s", got)
+	}
+}
+
+func TestRemoveMermaidBlocks(t *testing.T) {
+	input := "# Slide\n\nSome text\n\n```mermaid\ngraph TD\n    A --> B\n```\n\nMore text"
+	got := removeMermaidBlocks(input)
+
+	if strings.Contains(got, "mermaid") {
+		t.Errorf("mermaid block should be removed:\n%s", got)
+	}
+	if !strings.Contains(got, "Some text") {
+		t.Error("non-mermaid content should be preserved")
+	}
+	if !strings.Contains(got, "More text") {
+		t.Error("text after mermaid block should be preserved")
+	}
+}
+
+func TestRemoveMermaidBlocks_NoMermaid(t *testing.T) {
+	input := "# Slide\n\n```go\nfmt.Println(\"hello\")\n```\n"
+	got := removeMermaidBlocks(input)
+	if got != input {
+		t.Error("non-mermaid code blocks should be untouched")
 	}
 }
 
@@ -187,6 +228,81 @@ func TestPrepareCodeForModel(t *testing.T) {
 	}
 	if !strings.Contains(code, "TRUNCATED") {
 		t.Error("truncated code should contain marker")
+	}
+}
+
+func TestAssembleContentForModel_BudgetWeighting(t *testing.T) {
+	content := &crawler.CollectedContent{
+		Docs: []crawler.FileEntry{
+			{Path: "README.md", Content: "# Project\nThis is the project overview.", Category: "doc"},
+		},
+		Business: []crawler.FileEntry{
+			{Path: "main.go", Content: "package main\nfunc main() {}", Category: "business"},
+		},
+		Support: []crawler.FileEntry{
+			{Path: "main_test.go", Content: "package main\nfunc TestMain(t *testing.T) {}", Category: "support"},
+		},
+	}
+
+	result, note := assembleContentForModel(content, "gpt-4o")
+
+	// All three sections should be present.
+	if !strings.Contains(result, "PROJECT DOCUMENTATION") {
+		t.Error("expected DOCUMENTATION section")
+	}
+	if !strings.Contains(result, "CORE BUSINESS LOGIC") {
+		t.Error("expected BUSINESS LOGIC section")
+	}
+	if !strings.Contains(result, "SUPPORTING CODE") {
+		t.Error("expected SUPPORTING CODE section")
+	}
+	if !strings.Contains(result, "README.md") {
+		t.Error("expected README.md in output")
+	}
+	if !strings.Contains(result, "main.go") {
+		t.Error("expected main.go in output")
+	}
+	if !strings.Contains(result, "main_test.go") {
+		t.Error("expected main_test.go in output")
+	}
+	// Small content should not be truncated.
+	if note != "" {
+		t.Errorf("unexpected truncation note for small content: %q", note)
+	}
+}
+
+func TestAssembleContentForModel_EmptyContent(t *testing.T) {
+	content := &crawler.CollectedContent{}
+	result, _ := assembleContentForModel(content, "gpt-4o")
+
+	if !strings.Contains(result, "DOCUMENTATION FIRST") {
+		t.Error("expected header even for empty content")
+	}
+	// Should not contain section headers for empty tiers.
+	if strings.Contains(result, "CORE BUSINESS LOGIC") {
+		t.Error("should not include business section when empty")
+	}
+}
+
+func TestAssembleContentForModel_DocsFirst(t *testing.T) {
+	content := &crawler.CollectedContent{
+		Docs: []crawler.FileEntry{
+			{Path: "README.md", Content: "docs content", Category: "doc"},
+		},
+		Business: []crawler.FileEntry{
+			{Path: "app.go", Content: "code content", Category: "business"},
+		},
+	}
+
+	result, _ := assembleContentForModel(content, "gpt-4o")
+
+	docsIdx := strings.Index(result, "docs content")
+	codeIdx := strings.Index(result, "code content")
+	if docsIdx < 0 || codeIdx < 0 {
+		t.Fatal("both docs and code should be in output")
+	}
+	if docsIdx > codeIdx {
+		t.Error("docs should appear before code in output")
 	}
 }
 

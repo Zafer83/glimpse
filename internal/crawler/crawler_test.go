@@ -38,10 +38,11 @@ func TestExpandTilde(t *testing.T) {
 func TestCollectCode_BasicFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create a .go file, a .md doc, and a .txt file (should be ignored).
+	// Create a .go file, a .md doc, a .txt doc, and a .log file (should be ignored).
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\nfunc main() {}"), 0644)
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Hello"), 0644)
-	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ignored"), 0644)
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("project notes"), 0644)
+	os.WriteFile(filepath.Join(dir, "debug.log"), []byte("ignored"), 0644)
 
 	result, err := CollectCode(dir)
 	if err != nil {
@@ -54,8 +55,11 @@ func TestCollectCode_BasicFiles(t *testing.T) {
 	if !strings.Contains(result, "README.md") {
 		t.Error("expected README.md in output")
 	}
-	if strings.Contains(result, "notes.txt") {
-		t.Error("notes.txt should not be in output (unsupported extension)")
+	if !strings.Contains(result, "notes.txt") {
+		t.Error("expected notes.txt in output (.txt is now a doc format)")
+	}
+	if strings.Contains(result, "debug.log") {
+		t.Error("debug.log should not be in output (unsupported extension)")
 	}
 	if !strings.Contains(result, "DOCUMENTATION FIRST") {
 		t.Error("expected documentation-first header")
@@ -131,5 +135,63 @@ func TestCollectCode_SkipLockFiles(t *testing.T) {
 	}
 	if !strings.Contains(result, "package.json") {
 		t.Error("package.json should be included")
+	}
+}
+
+func TestCollectProject_TieredOutput(t *testing.T) {
+	dir := t.TempDir()
+
+	// Docs
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Project\nOverview here"), 0644)
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("Design notes"), 0644)
+
+	// Business logic
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\nfunc main() {}"), 0644)
+	os.WriteFile(filepath.Join(dir, "service.py"), []byte("class Service:\n    pass"), 0644)
+
+	// Support: test file
+	os.WriteFile(filepath.Join(dir, "main_test.go"), []byte("package main\nfunc TestMain(t *testing.T) {}"), 0644)
+
+	// Support: config
+	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("key: value"), 0644)
+
+	content, err := CollectProject(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	docs, biz, sup := content.Stats()
+	if docs != 2 {
+		t.Errorf("expected 2 docs, got %d", docs)
+	}
+	if biz != 2 {
+		t.Errorf("expected 2 business files, got %d", biz)
+	}
+	if sup != 2 {
+		t.Errorf("expected 2 support files, got %d", sup)
+	}
+
+	// README should sort before notes.txt.
+	if len(content.Docs) >= 2 {
+		if !strings.Contains(content.Docs[0].Path, "README") {
+			t.Errorf("README should be first doc, got: %s", content.Docs[0].Path)
+		}
+	}
+}
+
+func TestCollectProject_DocxSupport(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a minimal .rst doc.
+	os.WriteFile(filepath.Join(dir, "guide.rst"), []byte("Title\n=====\nSome reStructuredText."), 0644)
+
+	content, err := CollectProject(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	docs, _, _ := content.Stats()
+	if docs != 1 {
+		t.Errorf("expected 1 doc (.rst), got %d", docs)
 	}
 }

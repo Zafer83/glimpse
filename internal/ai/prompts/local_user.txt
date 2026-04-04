@@ -1,4 +1,10 @@
-Here is the source code of a software project. Read it carefully.
+Here is the source code and documentation of a software project. Read it carefully.
+
+The content is organized by priority:
+- DOCUMENTATION section: describes the project purpose, goals, architecture. USE THIS FOR THE PRESENTATION STORY.
+- BUSINESS LOGIC section: core source code. Pick interesting code for slides.
+- SUPPORTING CODE section: tests, configs. Only for background context.
+
 {{truncNote}}
 PROJECT SOURCE:
 {{code}}
@@ -12,19 +18,43 @@ Now generate a Slidev Markdown presentation about this project. Follow these rul
 3. Every slide MUST start with a "# Title" heading.
 4. Use short bullet points. Maximum 5 bullets per slide.
 5. Include at least one code snippet from the source above inside a fenced code block.
-6. Include one mermaid diagram showing how components connect.
-7. Last slide must say "Danke" or "Thank You".
+6. Do NOT use mermaid code blocks. Use bullet points to describe flows.
+7. Base the story on the DOCUMENTATION section — it tells you what is important.
 8. Do NOT wrap output in a markdown code fence.
 
-Start your output with EXACTLY this frontmatter (replace <title> with the project name):
+FIRST SLIDE must use this exact format:
 
 ---
-theme: {{theme}}
-title: <title>
-background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
+theme: '{{theme}}'
+layout: cover
+title: <project name>
 ---
 
-# <title>
+# <Project Name>
+
+<One-line description>
+
+<div class="absolute bottom-10">
+  <b>Code Architecture Presentation</b>
+</div>
+
+---
+
+LAST SLIDE must use this exact format:
+
+---
+layout: end
+---
+
+# Vielen Dank!
+
+Fragen? Gerne jetzt!
+
+---
+
+Available layouts: cover, end, default, center, section, statement, fact, quote, image-right, image-left, two-cols.
+Use at least 3 different layout types.
+For two-cols use ::right:: to separate columns.
 
 Then continue with more slides separated by --- like this:
 
@@ -36,9 +66,5 @@ Then continue with more slides separated by --- like this:
 - Point 2
 
 ---
-
-# Danke
-
-Fragen?
 
 BEGIN OUTPUT NOW:

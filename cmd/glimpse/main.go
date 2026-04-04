@@ -629,19 +629,23 @@ func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, en
 		resolved = abs
 	}
 	fmt.Printf("\n%s🔍 Scanning files in: %s%s%s\n", ColorBlue, ColorBold, resolved, ColorReset)
-	code, err := crawler.CollectCode(cfg.ProjectPath)
+	content, err := crawler.CollectProject(cfg.ProjectPath)
 	if err != nil {
 		fmt.Printf("%s❌ Error scanning project: %v%s\n", ColorRed, err, ColorReset)
 		return
 	}
-	if len(code) == 0 {
+	docs, biz, sup := content.Stats()
+	total := docs + biz + sup
+	if total == 0 {
 		fmt.Printf("%s⚠️ No supported files found in: %s%s\n", ColorYellow, resolved, ColorReset)
 		return
 	}
+	fmt.Printf("%s  📄 %d docs, 💼 %d business logic, 🔧 %d support files%s\n",
+		ColorGray, docs, biz, sup, ColorReset)
 
 	fmt.Printf("%s🧠 AI is analyzing code...%s\n", ColorMagenta, ColorReset)
 	stopLoader := startFancyLoader("🧠 AI is analyzing code...", profile, startColor, endColor)
-	slides, err := ai.GenerateSlides(cfg, code)
+	slides, err := ai.GenerateSlides(cfg, content)
 	if err != nil {
 		stopLoader("🧠 AI analysis stopped.")
 		fmt.Printf("%s❌ AI error: %v%s\n", ColorRed, err, ColorReset)

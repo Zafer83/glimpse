@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Zafer83/glimpse/internal/config"
+	"github.com/Zafer83/glimpse/internal/crawler"
 )
 
 //go:embed prompts/system.txt
@@ -46,8 +47,9 @@ func renderPrompt(tpl string, vars map[string]string) string {
 
 // GenerateSlides routes the slide generation request to the appropriate
 // LLM provider based on the model name in the config.
-func GenerateSlides(cfg *config.Config, code string) (string, error) {
-	codeForPrompt, truncNote := prepareCodeForModel(code, cfg.Model)
+// Accepts either *crawler.CollectedContent (structured) or a flat code string.
+func GenerateSlides(cfg *config.Config, content *crawler.CollectedContent) (string, error) {
+	codeForPrompt, truncNote := assembleContentForModel(content, cfg.Model)
 
 	systemPrompt := renderPrompt(systemPromptTpl, map[string]string{
 		"language": cfg.Language,
@@ -214,16 +216,118 @@ func truncateMiddleByBytes(s string, maxBytes int) string {
 	return head + marker + tail
 }
 
+// Budget allocation weights for content tiers.
+const (
+	docBudgetPct      = 0.60 // 60% for documentation
+	businessBudgetPct = 0.35 // 35% for business logic
+	supportBudgetPct  = 0.05 // 5% for support code
+)
+
+// assembleContentForModel builds a budget-weighted string from structured content.
+// Documentation gets the highest byte budget, business logic second, support third.
+// Unused budget from one tier flows to the next.
+func assembleContentForModel(content *crawler.CollectedContent, model string) (string, string) {
+	maxBytes := maxPromptBytesForModel(model)
+
+	docBudget := int(float64(maxBytes) * docBudgetPct)
+	bizBudget := int(float64(maxBytes) * businessBudgetPct)
+	supBudget := int(float64(maxBytes) * supportBudgetPct)
+
+	// Assemble each tier.
+	docStr := assembleTier(content.Docs, "DOC", "#")
+	bizStr := assembleTier(content.Business, "CODE", "//")
+	supStr := assembleTier(content.Support, "SUPPORT", "//")
+
+	// Redistribute unused budget downward: doc → business → support.
+	docUsed := min(len(docStr), docBudget)
+	leftover := docBudget - docUsed
+	bizBudget += leftover
+
+	bizUsed := min(len(bizStr), bizBudget)
+	leftover = bizBudget - bizUsed
+	supBudget += leftover
+
+	// Truncate each tier to its budget.
+	if len(docStr) > docBudget {
+		docStr = truncateMiddleByBytes(docStr, docBudget)
+	}
+	if len(bizStr) > bizBudget {
+		bizStr = truncateMiddleByBytes(bizStr, bizBudget)
+	}
+	if len(supStr) > supBudget {
+		supStr = truncateMiddleByBytes(supStr, supBudget)
+	}
+
+	var b strings.Builder
+	b.WriteString("# PROJECT CONTEXT ORDER: DOCUMENTATION FIRST, THEN CORE CODE\n")
+
+	if docStr != "" {
+		b.WriteString("\n# === SECTION: PROJECT DOCUMENTATION ===\n")
+		b.WriteString("# Use this section to understand the project's purpose, architecture, and goals.\n\n")
+		b.WriteString(docStr)
+	}
+	if bizStr != "" {
+		b.WriteString("\n\n# === SECTION: CORE BUSINESS LOGIC ===\n")
+		b.WriteString("# The most architecturally relevant source code.\n\n")
+		b.WriteString(bizStr)
+	}
+	if supStr != "" {
+		b.WriteString("\n\n# === SECTION: SUPPORTING CODE ===\n")
+		b.WriteString("# Tests, configs, and utilities — for additional context only.\n\n")
+		b.WriteString(supStr)
+	}
+
+	result := b.String()
+	totalBytes := len(result)
+	var note string
+	if totalBytes > maxBytes {
+		result = truncateMiddleByBytes(result, maxBytes)
+		note = fmt.Sprintf("- Note: Project content was truncated to %d bytes for model limits.", maxBytes)
+	}
+
+	docs, biz, sup := content.Stats()
+	if docs+biz+sup > 0 {
+		truncated := totalBytes > maxBytes
+		if truncated {
+			note = fmt.Sprintf("- Note: Project content was truncated to %d bytes (%d docs, %d code, %d support files).",
+				maxBytes, docs, biz, sup)
+		}
+	}
+
+	return result, note
+}
+
+// assembleTier concatenates file entries into a single string with headers.
+func assembleTier(entries []crawler.FileEntry, label, commentPrefix string) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, e := range entries {
+		b.WriteString(fmt.Sprintf("\n%s --- %s FILE: %s ---\n%s\n", commentPrefix, label, e.Path, e.Content))
+	}
+	return b.String()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 var slidevFrontmatterRe = regexp.MustCompile(`(?s)\A---\s*\n(.*?)\n---\s*\n?`)
 
 // normalizeSlidevMarkdown enforces a valid global Slidev frontmatter block,
-// injects the selected theme, and preserves visual fields (background) that
-// the AI generated.
+// injects the selected theme with layout: cover, and preserves visual fields
+// (background, author) that the AI generated.
 func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 	md := strings.TrimSpace(raw)
 	body := md
 	title := "Code Architecture Presentation"
 	background := ""
+	author := ""
+	layout := "cover"
 
 	if m := slidevFrontmatterRe.FindStringSubmatch(md); len(m) == 2 {
 		fm := m[1]
@@ -243,10 +347,15 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 				}
 			case "background":
 				if val != "" {
-					// Reconstruct the full value: the URL contains "://" so the
-					// right-hand side after the first ":" is only the part after
-					// the scheme separator. Re-join from parts[1] directly.
 					background = strings.TrimSpace(parts[1])
+				}
+			case "author":
+				if val != "" {
+					author = val
+				}
+			case "layout":
+				if val != "" {
+					layout = val
 				}
 			}
 		}
@@ -254,7 +363,11 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 
 	var fmParts []string
 	fmParts = append(fmParts, "theme: "+yamlQuote(cfg.Theme))
+	fmParts = append(fmParts, "layout: "+layout)
 	fmParts = append(fmParts, "title: "+yamlQuote(title))
+	if author != "" {
+		fmParts = append(fmParts, "author: "+yamlQuote(author))
+	}
 	if background != "" {
 		fmParts = append(fmParts, "background: "+background)
 	}
@@ -265,7 +378,20 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 	}
 	body = ensureTitleSlide(body, title)
 	body = ensureSlideBreakPerTopLevelHeading(body)
+
+	// Remove any mermaid code blocks — Slidev renders them with errors.
+	body = removeMermaidBlocks(body)
+
 	return frontmatter + body
+}
+
+// mermaidBlockRe matches ```mermaid ... ``` blocks.
+var mermaidBlockRe = regexp.MustCompile("(?s)```mermaid\\s*\n.*?```")
+
+// removeMermaidBlocks strips mermaid code blocks from the output since Slidev
+// cannot reliably render them without additional plugins.
+func removeMermaidBlocks(body string) string {
+	return mermaidBlockRe.ReplaceAllString(body, "")
 }
 
 func yamlQuote(v string) string {

@@ -1,37 +1,88 @@
 Read the project documentation and source code below. Then generate a Slidev Markdown presentation.
 
+IMPORTANT: The content is organized in three sections:
+1. PROJECT DOCUMENTATION — Use this to understand the project's purpose, goals, and architecture. This drives the presentation narrative.
+2. CORE BUSINESS LOGIC — The most important source code. Select interesting patterns, architectures, and algorithms for code slides.
+3. SUPPORTING CODE — Tests, configs, utilities. Use only for additional context, do not feature prominently.
+
+Base the presentation STORY on the documentation. Use code only to illustrate key technical points.
+
 YOU MUST produce between 10 and 15 slides. Each slide MUST be separated by --- on its own line.
 Every slide MUST start with a # heading. Do NOT put all content on one slide.
 
-STEP 1 - START WITH THIS EXACT GLOBAL FRONTMATTER:
+STEP 1 - FIRST SLIDE MUST BE EXACTLY THIS FORMAT (cover slide):
 
 ---
-theme: {{theme}}
-title: <your chosen title>
-background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
+theme: '{{theme}}'
+layout: cover
+author: Project Author
+title: '<your chosen title>'
 ---
 
-Pick a background URL that matches the project topic (software, code, architecture, data, cloud, etc.)
-from Unsplash. Use the format: https://images.unsplash.com/photo-<ID>?auto=format&fit=crop&w=1200
+# <Project Title>
 
-STEP 2 - SLIDE PLAN (create one slide per topic):
+<One-line description of the project>
 
-1. Cover/Title slide - project name, one-line description
-2. Project Overview - what the project does, key features (from README/docs)
-3. Tech Stack - languages, frameworks, dependencies used
-4. Architecture - high-level component overview
-5. Core Module 1 - explain the most important module with a code snippet
-6. Core Module 2 - explain another key module with a code snippet
-7. Data/Control Flow - include a mermaid diagram showing how components interact
-8. API/Interface Design - how users or other systems interact with the project
-9. Error Handling / Edge Cases - how the project handles failures
-10. Key Takeaways - summary of main insights
-11-15. Additional topics from the source code
-LAST SLIDE: "Thank You" outro with a background image (see format below)
+<div class="absolute bottom-10">
+  <b>Code Architecture Presentation</b>
+</div>
 
-STEP 3 - USE THESE EXACT SLIDE FORMATS:
+---
+
+Pick a title that matches the project topic.
+
+STEP 2 - LAST SLIDE MUST BE EXACTLY THIS FORMAT (end slide):
+
+---
+layout: end
+---
+
+# Vielen Dank!
+
+Fragen? Gerne jetzt!
+
+---
+
+STEP 3 - SLIDE PLAN (create one slide per topic):
+
+1. Cover slide (layout: cover) - project name, one-line description
+2. Project Overview (layout: default) - what the project does, key features (from documentation)
+3. Problem & Motivation (layout: default) - what problem does it solve, why was it built
+4. Tech Stack (layout: two-cols) - languages, frameworks, dependencies
+5. Architecture (layout: default) - high-level component overview with bullet points
+6. Core Module 1 (layout: default) - explain the most important module with a code snippet
+7. Core Module 2 (layout: image-right) - explain another key module
+8. Data/Control Flow (layout: default) - describe how components interact (use bullet points or a text diagram, NOT mermaid)
+9. API/Interface Design (layout: default) - how users or other systems interact
+10. Key Design Decisions (layout: quote or statement) - important architectural choices
+11-14. Additional topics from documentation and source code
+LAST. Thank You (layout: end)
+
+STEP 4 - AVAILABLE SLIDEV LAYOUTS (use the correct ones):
+
+- layout: cover — Cover page with title
+- layout: end — Final "Thank You" page
+- layout: default — Standard content slide
+- layout: center — Content centered on screen
+- layout: intro — Introduction with title, description, author
+- layout: section — Section divider between topics
+- layout: statement — Bold statement/affirmation
+- layout: fact — Prominent fact or data point
+- layout: quote — Quotation with prominence
+- layout: image-right — Image right, content left
+- layout: image-left — Image left, content right
+- layout: image — Full-screen image
+- layout: two-cols — Two columns (use ::right:: separator)
+- layout: two-cols-header — Header spanning both columns (use ::left:: and ::right::)
+- layout: full — Full screen content
+- layout: iframe — Embedded web page
+- layout: none — No styling
+
+STEP 5 - SLIDE FORMAT EXAMPLES:
 
 Regular slide:
+
+---
 
 # Slide Title
 
@@ -40,7 +91,27 @@ Regular slide:
 
 ---
 
-Slide with image on the right (use for at least 3 slides):
+Two-column slide:
+
+---
+layout: two-cols
+---
+
+# Left Column
+
+- Item 1
+- Item 2
+
+::right::
+
+# Right Column
+
+- Item 3
+- Item 4
+
+---
+
+Image-right slide:
 
 ---
 layout: image-right
@@ -53,41 +124,47 @@ Content here.
 
 ---
 
-Outro / Thank You slide (MUST be the last slide):
+Section divider:
 
 ---
-layout: cover
-background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200
+layout: section
 ---
 
-# Thank You
+# New Section Title
 
-Questions? Feedback?
+---
+
+Statement slide:
+
+---
+layout: statement
+---
+
+# Key Insight Here
 
 ---
 
 For code snippets use fenced blocks with the language tag:
 
-```go {2-4|6-8}
+```go
 // actual code from the project, not placeholders
-```
-
-For diagrams use mermaid blocks:
-
-```mermaid
-graph TD
-    A[Component] --> B[Component]
+func main() {
+    fmt.Println("Hello")
+}
 ```
 
 CRITICAL RULES:
 - Output MUST contain at least 10 occurrences of --- (slide separators)
 - EVERY slide MUST begin with # (a top-level heading)
-- GLOBAL frontmatter MUST contain a 'background' key with a real Unsplash URL
-- AT LEAST 3 slides MUST use 'layout: image-right' or 'layout: image-left' with an 'image' key
-- LAST slide MUST be a Thank You/outro with 'layout: cover' and a 'background' key
+- FIRST slide MUST use layout: cover
+- LAST slide MUST use layout: end
+- Do NOT use mermaid code blocks — Slidev renders them incorrectly. Use bullet points or text diagrams instead.
+- Use at least 3 different layout types across the presentation
 - Do NOT write a single long text. SPLIT content across slides.
 - Use REAL code from the provided source, not placeholder examples.
 - Do NOT wrap output in a markdown code fence.
+- PRIORITIZE documentation content for the narrative — the docs tell you WHAT to present.
+- For two-cols layout, use ::right:: to separate columns.
 {{truncNote}}
 PROJECT SOURCE:
 {{code}}
