@@ -1,3 +1,4 @@
+![Glimpse Banner](./glimpse.png)
 # Glimpse ✨
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/Zafer83/glimpse)](https://goreportcard.com/report/github.com/Zafer83/glimpse)
