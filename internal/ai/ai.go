@@ -29,71 +29,70 @@ import (
 func GenerateSlides(cfg *config.Config, code string) (string, error) {
 	codeForPrompt, truncNote := prepareCodeForModel(code, cfg.Model)
 
-	systemPrompt := fmt.Sprintf(`You generate Slidev presentations. Write all content in %s.
-Output ONLY raw Slidev Markdown — no code fences around it, no explanation.`, cfg.Language)
+	systemPrompt := fmt.Sprintf(`You are a Slidev presentation generator. You output ONLY valid Slidev Markdown.
+Write all slide text in %s. Output nothing except the Slidev Markdown itself.`, cfg.Language)
 
 	userPrompt := fmt.Sprintf(
-		`Analyze the source code below and create a Slidev Markdown presentation.
+		`Read the project documentation and source code below. Then generate a Slidev Markdown presentation.
 
-EXACT FORMAT — follow this structure precisely:
+YOU MUST produce between 8 and 15 slides. Each slide MUST be separated by --- on its own line.
+Every slide MUST start with a # heading. Do NOT put all content on one slide.
+
+The FIRST lines of your output must be exactly this (the global headmatter):
 
 ---
 theme: %s
-title: <descriptive project title>
+title: <your chosen title>
 ---
 
-# Project Title
+After the headmatter, write slides like this. THIS IS THE EXACT PATTERN TO REPEAT:
 
-Short project summary.
+# Slide Title Here
 
----
-
-# Architecture Overview
-
-- Key architectural decisions
-- Main components and their roles
+- Bullet point or content
+- Another point
 
 ---
 
-# Core Logic
+# Next Slide Title
 
-Explain the most important business logic with a code snippet:
+More content here.
 
-`+"```"+`go {1-3|5-8}
-func example() {
-    // highlighted code
-}
+---
+
+SLIDE PLAN — you must create separate slides for each of these topics:
+1. Cover/Title slide — project name, one-line description
+2. Project Overview — what the project does, key features (from README/docs)
+3. Tech Stack — languages, frameworks, dependencies used
+4. Architecture — high-level component overview
+5. Core Module 1 — explain the most important module with a code snippet
+6. Core Module 2 — explain another key module with a code snippet
+7. Data/Control Flow — include a mermaid diagram showing how components interact
+8. API/Interface Design — how users or other systems interact with the project
+9. Error Handling / Edge Cases — how the project handles failures
+10. Key Takeaways — summary of main insights
+
+For code snippets use fenced blocks with the language tag:
+
+`+"```"+`go {2-4|6-8}
+// actual code from the project, not placeholders
 `+"```"+`
 
----
-
-# System Flow
+For diagrams use mermaid blocks:
 
 `+"```"+`mermaid
-graph LR
-  A[Input] --> B[Process] --> C[Output]
+graph TD
+    A[Component] --> B[Component]
 `+"```"+`
 
----
-layout: center
----
-
-# Key Takeaways
-
-- Summary point 1
-- Summary point 2
-
-RULES:
-1. Start with "---" then theme/title frontmatter, then "---".
-2. Every slide begins with "# Title" as the first content line.
-3. Separate slides with a blank line, then "---", then a blank line.
-4. Per-slide frontmatter (layout, class) goes between "---" and the heading.
-5. Use fenced code blocks with language tags and Slidev line highlights {1-3|5-7}.
-6. Include at least one mermaid diagram.
-7. Create 8-15 slides covering: overview, architecture, key modules, important logic, data flow, takeaways.
-8. Each slide should focus on ONE topic with a clear heading.
+CRITICAL RULES:
+- Output MUST contain at least 8 occurrences of --- (slide separators)
+- Every slide MUST begin with # (a top-level heading)
+- Do NOT write a single long text. SPLIT content across slides.
+- Use REAL code from the provided source, not placeholder examples.
+- Do NOT wrap output in a markdown code fence.
 %s
-SOURCE CODE:
+PROJECT SOURCE:
 %s`,
 		cfg.Theme, truncNote, codeForPrompt)
 
