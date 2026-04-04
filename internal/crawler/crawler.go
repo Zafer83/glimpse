@@ -33,7 +33,7 @@ var supportedExtensions = map[string]bool{
 func CollectCode(root string) (string, error) {
 	absPath, err := filepath.Abs(root)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve project path: %w", err)
 	}
 	var builder strings.Builder
 

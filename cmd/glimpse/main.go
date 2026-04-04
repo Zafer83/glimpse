@@ -181,8 +181,6 @@ func main() {
 	// "Cyberpunk Night"
 	startColor, _ := colorful.Hex("#00f2fe")
 	endColor, _ := colorful.Hex("#7117ea")
-	//startColor, _ := colorful.Hex("#4facfe")
-	//endColor, _ := colorful.Hex("#ee0979")
 
 	p := termenv.ColorProfile()
 
@@ -209,22 +207,12 @@ func main() {
 
 	reader, readerCloser := promptInputReader()
 	if readerCloser != nil {
-		defer func(readerCloser io.Closer) {
-			err := readerCloser.Close()
-			if err != nil {
-
-			}
-		}(readerCloser)
+		defer func() { _ = readerCloser.Close() }()
 	}
 	var line *liner.State
 	if supportsLineEditing() {
 		line = liner.NewLiner()
-		defer func(line *liner.State) {
-			err := line.Close()
-			if err != nil {
-
-			}
-		}(line)
+		defer func() { _ = line.Close() }()
 		line.SetCtrlCAborts(true)
 	}
 
