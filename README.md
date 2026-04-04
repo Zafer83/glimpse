@@ -36,14 +36,95 @@ go build -o glimpse ./cmd/glimpse
 
 ## Usage
 
+### Interactive Mode
+
+Start Glimpse without Flags — das Programm fragt alle Eingaben interaktiv ab:
+
 ```bash
 ./glimpse
 ```
 
-Version:
+### Non-Interactive Mode (CLI Flags)
+
+Alle Parameter können als Flags übergeben werden. Sobald `--path` gesetzt ist, läuft Glimpse vollständig non-interactive — ideal für Skripte, CI/CD und Automatisierung.
+
+```bash
+./glimpse --path ./my-project --model gpt-4o --api-key sk-... --theme seriph --lang en --output presentation.md --slidev
+```
+
+### `./glimpse --help`
+
+Zeigt alle verfügbaren Flags:
+
+```
+Usage of glimpse:
+  -api-key string
+        API key (or set GLIMPSE_API_KEY env)
+  -lang string
+        Presentation language (default: de)
+  -local-url string
+        Local LLM base URL (default: http://localhost:11434)
+  -model string
+        AI model (e.g. gpt-4o, gemini-2.0-flash, local/qwen2.5-coder:7b)
+  -output string
+        Output file name (default: slides.md)
+  -path string
+        Project path to scan
+  -slidev
+        Auto-start Slidev after generation (non-interactive)
+  -theme string
+        Slidev theme (default: seriph)
+  -v    Print version and exit
+  -version
+        Print version and exit
+```
+
+### Flag Reference
+
+| Flag | Typ | Default | Beschreibung |
+|------|-----|---------|--------------|
+| `--path` | string | *(keiner)* | Pfad zum Projekt-Verzeichnis. **Pflicht** für Non-Interactive Mode. Unterstützt relative Pfade und `~/`. |
+| `--model` | string | `gemini-2.0-flash` | AI-Modell. Siehe [Model examples](#model-examples) für gültige Werte. |
+| `--api-key` | string | *(keiner)* | API-Key für Cloud-Modelle (OpenAI, Gemini, Anthropic). Alternativ via Umgebungsvariable `GLIMPSE_API_KEY`. Nicht benötigt für lokale Modelle. |
+| `--theme` | string | `seriph` | Slidev-Theme. Offizielle Kurzform (`seriph`, `default`, `bricks`) oder voller npm-Paketname. |
+| `--lang` | string | `de` | Sprache der generierten Präsentation (z.B. `de`, `en`, `fr`, `tr`). |
+| `--output` | string | `slides.md` | Dateiname der erzeugten Slidev-Markdown-Datei. |
+| `--local-url` | string | `http://localhost:11434` | Basis-URL des lokalen LLM-Servers (Ollama oder llama.cpp). |
+| `--slidev` | bool | `false` | Startet Slidev automatisch nach der Generierung. Nur im Non-Interactive Mode relevant. |
+| `--version`, `-v` | bool | `false` | Gibt die Version aus und beendet das Programm. |
+
+### Beispiele
+
+**Cloud-Modell mit OpenAI:**
+
+```bash
+./glimpse --path ~/Projects/my-app --model gpt-4o --api-key sk-abc123 --lang en
+```
+
+**Lokales Modell mit Ollama (kein API-Key nötig):**
+
+```bash
+./glimpse --path ./my-project --model local/qwen2.5-coder:7b
+```
+
+**Automatische Slidev-Präsentation starten:**
+
+```bash
+./glimpse --path ./my-project --model local --slidev --output demo.md
+```
+
+**API-Key über Umgebungsvariable:**
+
+```bash
+export GLIMPSE_API_KEY=sk-abc123
+./glimpse --path ./my-project --model gpt-4o
+```
+
+**Version anzeigen:**
 
 ```bash
 ./glimpse --version
+./glimpse -v
 ```
 
 ## Versioning
@@ -98,20 +179,102 @@ This creates artifacts in a versioned folder:
 - Gemini: `gemini-2.0-flash`
 - Anthropic: `claude-3-5-sonnet-latest`
 - Local:
-  - `local` (defaults to `llama3.2`)
-  - `local/Qwen3-Coder-30B-A3B-Instruct-BF16-00001-of-00002.gguf`
+  - `local` (defaults to `qwen2.5-coder:7b`)
+  - `local/qwen2.5-coder:14b`
 
 ### Local server URL input
 
 If you choose a local model, Glimpse asks for:
 
-- `Local LLM URL (e.g. http://localhost:8080)`
+- `Local LLM URL (e.g. http://localhost:11434)`
+
+For Ollama, use:
+
+- `http://localhost:11434` (Glimpse uses `/api/chat`)
 
 For `llama.cpp` OpenAI-compatible server, use:
 
 - `http://localhost:8080` (Glimpse uses `/v1/chat/completions`)
 
-If needed, it can also fall back to Ollama-style `/api/chat`.
+## Local Mode (Ollama) — no API key required
+
+Glimpse works fully offline with [Ollama](https://ollama.com). No OpenAI, Gemini, or Anthropic account needed.
+
+### Quick setup
+
+**Mac / Linux:**
+
+```bash
+./scripts/setup-ollama.sh
+```
+
+Install a specific model (optional — default is `qwen2.5-coder:7b`):
+
+```bash
+./scripts/setup-ollama.sh llama3.2
+./scripts/setup-ollama.sh qwen2.5-coder:14b
+```
+
+**Windows (PowerShell, run as Administrator):**
+
+```powershell
+.\scripts\setup-ollama.ps1
+```
+
+Install a specific model:
+
+```powershell
+.\scripts\setup-ollama.ps1 llama3.2
+.\scripts\setup-ollama.ps1 qwen2.5-coder:14b
+```
+
+The script will:
+1. Install Ollama if it is not already installed
+2. Start the Ollama server in the background
+3. Download the chosen model
+4. Print the exact values to enter in Glimpse
+
+### Manual setup
+
+If you prefer to set up Ollama yourself:
+
+```bash
+# 1. Install Ollama
+# macOS:  brew install ollama  OR  curl -fsSL https://ollama.com/install.sh | sh
+# Linux:  curl -fsSL https://ollama.com/install.sh | sh
+# Windows: download from https://ollama.com/download
+
+# 2. Start the server
+ollama serve
+
+# 3. Pull a model (in a separate terminal)
+ollama pull qwen2.5-coder:7b
+```
+
+### Recommended models
+
+| Model | Size | Best for |
+|---|---|---|
+| `qwen2.5-coder:7b` | ~4 GB | Code analysis — good default |
+| `qwen2.5-coder:14b` | ~8 GB | Higher quality, needs more RAM |
+| `llama3.2` | ~2 GB | Fast, lower RAM |
+| `codellama:7b` | ~4 GB | Alternative code model |
+
+### Glimpse settings for Ollama
+
+When Glimpse prompts you, enter:
+
+```
+AI Model:      local
+Local LLM URL: http://localhost:11434
+API Key:        (leave empty)
+```
+
+Or use a specific model name:
+
+```
+AI Model:      local/qwen2.5-coder:7b
+```
 
 ## Slidev Theme Validation
 

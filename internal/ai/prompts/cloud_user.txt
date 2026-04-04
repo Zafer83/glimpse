@@ -1,0 +1,93 @@
+Read the project documentation and source code below. Then generate a Slidev Markdown presentation.
+
+YOU MUST produce between 10 and 15 slides. Each slide MUST be separated by --- on its own line.
+Every slide MUST start with a # heading. Do NOT put all content on one slide.
+
+STEP 1 - START WITH THIS EXACT GLOBAL FRONTMATTER:
+
+---
+theme: {{theme}}
+title: <your chosen title>
+background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
+---
+
+Pick a background URL that matches the project topic (software, code, architecture, data, cloud, etc.)
+from Unsplash. Use the format: https://images.unsplash.com/photo-<ID>?auto=format&fit=crop&w=1200
+
+STEP 2 - SLIDE PLAN (create one slide per topic):
+
+1. Cover/Title slide - project name, one-line description
+2. Project Overview - what the project does, key features (from README/docs)
+3. Tech Stack - languages, frameworks, dependencies used
+4. Architecture - high-level component overview
+5. Core Module 1 - explain the most important module with a code snippet
+6. Core Module 2 - explain another key module with a code snippet
+7. Data/Control Flow - include a mermaid diagram showing how components interact
+8. API/Interface Design - how users or other systems interact with the project
+9. Error Handling / Edge Cases - how the project handles failures
+10. Key Takeaways - summary of main insights
+11-15. Additional topics from the source code
+LAST SLIDE: "Thank You" outro with a background image (see format below)
+
+STEP 3 - USE THESE EXACT SLIDE FORMATS:
+
+Regular slide:
+
+# Slide Title
+
+- Bullet point
+- Another point
+
+---
+
+Slide with image on the right (use for at least 3 slides):
+
+---
+layout: image-right
+image: https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=800
+---
+
+# Slide Title
+
+Content here.
+
+---
+
+Outro / Thank You slide (MUST be the last slide):
+
+---
+layout: cover
+background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200
+---
+
+# Thank You
+
+Questions? Feedback?
+
+---
+
+For code snippets use fenced blocks with the language tag:
+
+```go {2-4|6-8}
+// actual code from the project, not placeholders
+```
+
+For diagrams use mermaid blocks:
+
+```mermaid
+graph TD
+    A[Component] --> B[Component]
+```
+
+CRITICAL RULES:
+- Output MUST contain at least 10 occurrences of --- (slide separators)
+- EVERY slide MUST begin with # (a top-level heading)
+- GLOBAL frontmatter MUST contain a 'background' key with a real Unsplash URL
+- AT LEAST 3 slides MUST use 'layout: image-right' or 'layout: image-left' with an 'image' key
+- LAST slide MUST be a Thank You/outro with 'layout: cover' and a 'background' key
+- Do NOT write a single long text. SPLIT content across slides.
+- Use REAL code from the provided source, not placeholder examples.
+- Do NOT wrap output in a markdown code fence.
+{{truncNote}}
+PROJECT SOURCE:
+{{code}}

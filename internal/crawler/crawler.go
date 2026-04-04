@@ -52,26 +52,65 @@ var docExtensions = map[string]bool{
 	".mdx": true,
 }
 
-func shouldSkipPath(path string) bool {
-	lowPath := strings.ToLower(path)
-	return strings.Contains(lowPath, "node_modules") ||
-		strings.Contains(lowPath, ".git") ||
-		strings.Contains(lowPath, "dist") ||
-		strings.Contains(lowPath, ".idea") ||
-		strings.Contains(lowPath, "vendor") ||
-		strings.Contains(lowPath, "build") ||
-		strings.HasSuffix(lowPath, "package-lock.json") ||
-		strings.HasSuffix(lowPath, "pnpm-lock.yaml") ||
-		strings.HasSuffix(lowPath, "yarn.lock") ||
-		strings.HasPrefix(filepath.Base(path), ".")
+// skipDirs is the set of directory names to skip entirely during traversal.
+// Checked against the exact directory name (not a substring of the full path)
+// to avoid false positives like "distribute" or home dirs with "build" in the name.
+var skipDirs = map[string]bool{
+	"node_modules": true,
+	".git":         true,
+	"dist":         true,
+	".idea":        true,
+	"vendor":       true,
+	"build":        true,
+	"__pycache__":  true,
+	".next":        true,
+	".nuxt":        true,
+	"coverage":     true,
+	".cache":       true,
+	"out":          true,
+	".venv":        true,
+	"venv":         true,
+	"target":       true, // Rust / Maven
+}
+
+// skipFiles is the set of exact filenames to ignore.
+var skipFiles = map[string]bool{
+	"package-lock.json": true,
+	"pnpm-lock.yaml":    true,
+	"yarn.lock":         true,
+	"go.sum":            true,
+}
+
+// expandTilde replaces a leading "~/" or bare "~" with the user's home directory.
+// filepath.Abs does not handle tilde, so we do it explicitly.
+func expandTilde(path string) string {
+	if path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
 }
 
 // CollectCode walks the project tree and concatenates docs + source code.
 // Documentation is placed first so the model can infer intent/story before deep code details.
 func CollectCode(root string) (string, error) {
-	absPath, err := filepath.Abs(root)
+	absPath, err := filepath.Abs(expandTilde(root))
 	if err != nil {
 		return "", fmt.Errorf("resolve project path: %w", err)
+	}
+
+	if _, err := os.Stat(absPath); err != nil {
+		return "", fmt.Errorf("project path does not exist: %s", absPath)
 	}
 
 	var docs []string
@@ -81,10 +120,16 @@ func CollectCode(root string) (string, error) {
 		if walkErr != nil {
 			return nil
 		}
+		name := info.Name()
 		if info.IsDir() {
+			// Skip hidden directories and known noise directories by exact name.
+			if strings.HasPrefix(name, ".") || skipDirs[strings.ToLower(name)] {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		if shouldSkipPath(path) {
+		// Skip hidden files and known lock/generated files by exact name.
+		if strings.HasPrefix(name, ".") || skipFiles[strings.ToLower(name)] {
 			return nil
 		}
 

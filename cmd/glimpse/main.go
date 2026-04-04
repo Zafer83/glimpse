@@ -19,6 +19,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -317,21 +318,54 @@ func resolveThemeCandidates(theme string) ([]string, bool) {
 	}), false
 }
 
+// glimpseWorkDir returns the persistent cache directory for glimpse's Slidev
+// infrastructure (node_modules, vite config). Uses the OS user cache dir so
+// files survive reboots and never pollute the user's working directory.
+func glimpseWorkDir() (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine user cache dir: %w", err)
+	}
+	dir := filepath.Join(cacheDir, "glimpse")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("cannot create glimpse work dir: %w", err)
+	}
+	return dir, nil
+}
+
+// initWorkDir writes the minimal package.json and vite.config.ts into workDir
+// if they do not already exist.
+func initWorkDir(workDir string) error {
+	pkgJSON := filepath.Join(workDir, "package.json")
+	if _, err := os.Stat(pkgJSON); os.IsNotExist(err) {
+		content := `{"private":true,"dependencies":{}}` + "\n"
+		if err := os.WriteFile(pkgJSON, []byte(content), 0644); err != nil {
+			return fmt.Errorf("cannot write package.json: %w", err)
+		}
+	}
+	viteCfg := filepath.Join(workDir, "vite.config.ts")
+	if _, err := os.Stat(viteCfg); os.IsNotExist(err) {
+		content := "import { defineConfig } from 'vite'\n\nexport default defineConfig({\n  server: { fs: { strict: false } },\n})\n"
+		if err := os.WriteFile(viteCfg, []byte(content), 0644); err != nil {
+			return fmt.Errorf("cannot write vite.config.ts: %w", err)
+		}
+	}
+	return nil
+}
+
 func npmPackageExists(pkg string) bool {
 	cmd := exec.Command("npm", "view", pkg, "name", "--silent")
 	return cmd.Run() == nil
 }
 
-func npmPackageInstalled(pkg string) bool {
+func npmPackageInstalled(pkg, workDir string) bool {
 	parts := strings.Split(pkg, "/")
-	path := filepath.Join(append([]string{"node_modules"}, parts...)...)
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		return true
-	}
-	return false
+	path := filepath.Join(append([]string{workDir, "node_modules"}, parts...)...)
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
-func ensureSlidevTheme(theme string) error {
+func ensureSlidevTheme(theme, workDir string) error {
 	candidates, builtin := resolveThemeCandidates(theme)
 	if builtin {
 		return nil
@@ -347,12 +381,13 @@ func ensureSlidevTheme(theme string) error {
 	if pkg == "" {
 		return fmt.Errorf("theme %q is not a valid Slidev theme package. tried: %s", theme, strings.Join(candidates, ", "))
 	}
-	if npmPackageInstalled(pkg) {
+	if npmPackageInstalled(pkg, workDir) {
 		return nil
 	}
 
 	fmt.Printf("%s📦 Installing Slidev theme package: %s%s\n", ColorCyan, pkg, ColorReset)
 	cmd := exec.Command("npm", "install", "-D", pkg)
+	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -514,7 +549,7 @@ func renderBanner(v string, profile termenv.Profile, startColor, endColor colorf
 }
 
 // --- User config prompting ---
-func promptUserConfig(line *liner.State, reader *bufio.Reader) *config.Config {
+func promptUserConfig(line *liner.State, reader *bufio.Reader, workDir string) *config.Config {
 	if line != nil {
 		line.SetCompleter(func(input string) (c []string) {
 			path := strings.TrimSpace(input)
@@ -538,12 +573,12 @@ func promptUserConfig(line *liner.State, reader *bufio.Reader) *config.Config {
 	}
 
 	theme := ask(line, reader, "Slidev Theme", "seriph")
-	if err := ensureSlidevTheme(theme); err != nil {
+	if err := ensureSlidevTheme(theme, workDir); err != nil {
 		fmt.Printf("%s❌ Theme error: %v%s\n", ColorRed, err, ColorReset)
 		os.Exit(1)
 	}
 
-	model := ask(line, reader, "AI Model (gpt-4o, gemini-2.0-flash, claude-3-5-sonnet-latest, local)", "gemini-2.0-flash")
+	model := ask(line, reader, "AI Model (gpt-4o, gemini-2.0-flash, claude-3-5-sonnet-latest, local/qwen2.5-coder:7b)", "gemini-2.0-flash")
 	lang := ask(line, reader, "Language", "de")
 	out := ask(line, reader, "File Name", "slides.md")
 
@@ -576,10 +611,31 @@ func promptUserConfig(line *liner.State, reader *bufio.Reader) *config.Config {
 
 // --- Code processing ---
 func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, endColor colorful.Color) {
-	fmt.Printf("\n%s🔍 Scanning files in: %s%s%s\n", ColorBlue, ColorBold, cfg.ProjectPath, ColorReset)
+	// Resolve the path early so the user sees exactly what will be scanned.
+	// Relative paths are resolved from the process CWD (where glimpse was
+	// started), not from the binary location — making this visible avoids
+	// confusion when the user enters paths like ../../some-project.
+	resolved := cfg.ProjectPath
+	if strings.HasPrefix(resolved, "~/") || resolved == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			if resolved == "~" {
+				resolved = home
+			} else {
+				resolved = filepath.Join(home, resolved[2:])
+			}
+		}
+	}
+	if abs, err := filepath.Abs(resolved); err == nil {
+		resolved = abs
+	}
+	fmt.Printf("\n%s🔍 Scanning files in: %s%s%s\n", ColorBlue, ColorBold, resolved, ColorReset)
 	code, err := crawler.CollectCode(cfg.ProjectPath)
-	if err != nil || len(code) == 0 {
-		fmt.Printf("%s⚠️ No files found.%s\n", ColorYellow, ColorReset)
+	if err != nil {
+		fmt.Printf("%s❌ Error scanning project: %v%s\n", ColorRed, err, ColorReset)
+		return
+	}
+	if len(code) == 0 {
+		fmt.Printf("%s⚠️ No supported files found in: %s%s\n", ColorYellow, resolved, ColorReset)
 		return
 	}
 
@@ -600,15 +656,16 @@ func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, en
 	fmt.Printf("\n%s✅ DONE!%s Your presentation is ready: %s\n\n", ColorGreen+ColorBold, ColorReset, cfg.Output)
 }
 
-// --- Slidev launch ---
-func promptAndLaunchSlidev(line *liner.State, reader *bufio.Reader, output string) {
-	runSlidev := strings.ToLower(strings.TrimSpace(ask(line, reader, "Start Slidev now? (Y/n)", "Y")))
-	if runSlidev != "y" && runSlidev != "yes" && runSlidev != "" {
+// launchSlidev starts Slidev directly without prompting (used in non-interactive mode).
+func launchSlidev(output, workDir string) {
+	absOutput, err := filepath.Abs(output)
+	if err != nil {
+		fmt.Printf("%s❌ Cannot resolve output path: %v%s\n", ColorRed, err, ColorReset)
 		return
 	}
-
-	fmt.Printf("%s🚀 Starting Slidev: npx --yes @slidev/cli %s%s\n", ColorCyan, output, ColorReset)
-	cmd := exec.Command("npx", "--yes", "@slidev/cli", output)
+	fmt.Printf("%s🚀 Starting Slidev: npx --yes @slidev/cli %s%s\n", ColorCyan, absOutput, ColorReset)
+	cmd := exec.Command("npx", "--yes", "@slidev/cli", absOutput)
+	cmd.Dir = workDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -617,17 +674,97 @@ func promptAndLaunchSlidev(line *liner.State, reader *bufio.Reader, output strin
 	}
 }
 
+// --- Slidev launch ---
+func promptAndLaunchSlidev(line *liner.State, reader *bufio.Reader, output, workDir string) {
+	runSlidev := strings.ToLower(strings.TrimSpace(ask(line, reader, "Start Slidev now? (Y/n)", "Y")))
+	if runSlidev != "y" && runSlidev != "yes" && runSlidev != "" {
+		return
+	}
+
+	// Resolve output to absolute path so Slidev finds it regardless of cmd.Dir.
+	absOutput, err := filepath.Abs(output)
+	if err != nil {
+		fmt.Printf("%s❌ Cannot resolve output path: %v%s\n", ColorRed, err, ColorReset)
+		return
+	}
+
+	fmt.Printf("%s🚀 Starting Slidev: npx --yes @slidev/cli %s%s\n", ColorCyan, absOutput, ColorReset)
+	cmd := exec.Command("npx", "--yes", "@slidev/cli", absOutput)
+	cmd.Dir = workDir
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("%s❌ Failed to start Slidev: %v%s\n", ColorRed, err, ColorReset)
+	}
+}
+
+// --- CLI Flags ---
+
+var (
+	flagVersion  = flag.Bool("version", false, "Print version and exit")
+	flagPath     = flag.String("path", "", "Project path to scan")
+	flagModel    = flag.String("model", "", "AI model (e.g. gpt-4o, gemini-2.0-flash, local/qwen2.5-coder:7b)")
+	flagOutput   = flag.String("output", "", "Output file name (default: slides.md)")
+	flagTheme    = flag.String("theme", "", "Slidev theme (default: seriph)")
+	flagLang     = flag.String("lang", "", "Presentation language (default: de)")
+	flagAPIKey   = flag.String("api-key", "", "API key (or set GLIMPSE_API_KEY env)")
+	flagLocalURL = flag.String("local-url", "", "Local LLM base URL (default: http://localhost:11434)")
+	flagSlidev   = flag.Bool("slidev", false, "Auto-start Slidev after generation (non-interactive)")
+)
+
+// configFromFlags builds a Config from CLI flags. Returns nil if --path is not
+// set, signalling that the interactive mode should be used instead.
+func configFromFlags() *config.Config {
+	if *flagPath == "" {
+		return nil
+	}
+
+	model := stringDefault(*flagModel, "gemini-2.0-flash")
+	theme := stringDefault(*flagTheme, "seriph")
+	lang := stringDefault(*flagLang, "de")
+	output := stringDefault(*flagOutput, "slides.md")
+	localURL := stringDefault(*flagLocalURL, "http://localhost:11434")
+
+	apiKey := *flagAPIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("GLIMPSE_API_KEY")
+	}
+	if ai.RequiresAPIKey(model) && apiKey == "" {
+		fmt.Fprintf(os.Stderr, "%s❌ Error: --api-key required for %s (or set GLIMPSE_API_KEY env)%s\n", ColorRed, model, ColorReset)
+		os.Exit(1)
+	}
+
+	return &config.Config{
+		APIKey:       apiKey,
+		LocalBaseURL: localURL,
+		Theme:        theme,
+		Model:        model,
+		Language:     lang,
+		Output:       output,
+		ProjectPath:  *flagPath,
+	}
+}
+
+func stringDefault(val, def string) string {
+	if val != "" {
+		return val
+	}
+	return def
+}
+
 // --- Main ---
 func main() {
 	initTerminalAppearance()
 	v := resolvedVersion()
 
-	if len(os.Args) > 1 {
-		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
-		if arg == "--version" || arg == "-v" || arg == "version" {
-			fmt.Printf("glimpse %s\n", v)
-			return
-		}
+	// Register -v as alias for --version.
+	flag.BoolVar(flagVersion, "v", false, "Print version and exit")
+	flag.Parse()
+
+	if *flagVersion {
+		fmt.Printf("glimpse %s\n", v)
+		return
 	}
 
 	setupInterruptHandler()
@@ -636,6 +773,30 @@ func main() {
 	endColor, _ := colorful.Hex(bannerEndHex)
 	profile := termenv.ColorProfile()
 
+	workDir, err := glimpseWorkDir()
+	if err != nil {
+		fmt.Printf("%s❌ Error: %v%s\n", ColorRed, err, ColorReset)
+		os.Exit(1)
+	}
+	if err := initWorkDir(workDir); err != nil {
+		fmt.Printf("%s❌ Error: %v%s\n", ColorRed, err, ColorReset)
+		os.Exit(1)
+	}
+
+	// Non-interactive mode: all config from CLI flags.
+	if cfg := configFromFlags(); cfg != nil {
+		if err := ensureSlidevTheme(cfg.Theme, workDir); err != nil {
+			fmt.Printf("%s❌ Theme error: %v%s\n", ColorRed, err, ColorReset)
+			os.Exit(1)
+		}
+		scanAndGenerate(cfg, profile, startColor, endColor)
+		if *flagSlidev {
+			launchSlidev(cfg.Output, workDir)
+		}
+		return
+	}
+
+	// Interactive mode.
 	renderBanner(v, profile, startColor, endColor)
 
 	reader, readerCloser := promptInputReader()
@@ -649,9 +810,9 @@ func main() {
 		line.SetCtrlCAborts(true)
 	}
 
-	cfg := promptUserConfig(line, reader)
+	cfg := promptUserConfig(line, reader, workDir)
 
 	scanAndGenerate(cfg, profile, startColor, endColor)
 
-	promptAndLaunchSlidev(line, reader, cfg.Output)
+	promptAndLaunchSlidev(line, reader, cfg.Output, workDir)
 }

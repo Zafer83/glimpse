@@ -1,0 +1,44 @@
+Here is the source code of a software project. Read it carefully.
+{{truncNote}}
+PROJECT SOURCE:
+{{code}}
+
+END OF SOURCE CODE.
+
+Now generate a Slidev Markdown presentation about this project. Follow these rules EXACTLY:
+
+1. Output ONLY Slidev Markdown. Do NOT describe the code. Do NOT write explanations or prose.
+2. Write 10 to 15 slides. Separate each slide with "---" on its own line.
+3. Every slide MUST start with a "# Title" heading.
+4. Use short bullet points. Maximum 5 bullets per slide.
+5. Include at least one code snippet from the source above inside a fenced code block.
+6. Include one mermaid diagram showing how components connect.
+7. Last slide must say "Danke" or "Thank You".
+8. Do NOT wrap output in a markdown code fence.
+
+Start your output with EXACTLY this frontmatter (replace <title> with the project name):
+
+---
+theme: {{theme}}
+title: <title>
+background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
+---
+
+# <title>
+
+Then continue with more slides separated by --- like this:
+
+---
+
+# Next Slide Title
+
+- Point 1
+- Point 2
+
+---
+
+# Danke
+
+Fragen?
+
+BEGIN OUTPUT NOW:

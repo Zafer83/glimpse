@@ -53,7 +53,10 @@ func doJSONRequest(method, url string, headers map[string]string, body []byte, t
 	}
 
 	if resp.StatusCode >= 300 {
-		return resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(rawBody)))
+		return resp.StatusCode, &HTTPError{
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(rawBody)),
+		}
 	}
 
 	if target != nil {

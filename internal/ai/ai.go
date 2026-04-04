@@ -17,101 +17,117 @@ limitations under the License.
 package ai
 
 import (
+	_ "embed"
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Zafer83/glimpse/internal/config"
 )
+
+//go:embed prompts/system.txt
+var systemPromptTpl string
+
+//go:embed prompts/local_user.txt
+var localUserPromptTpl string
+
+//go:embed prompts/cloud_user.txt
+var cloudUserPromptTpl string
+
+// renderPrompt replaces {{key}} placeholders in a template string.
+func renderPrompt(tpl string, vars map[string]string) string {
+	result := tpl
+	for k, v := range vars {
+		result = strings.ReplaceAll(result, "{{"+k+"}}", v)
+	}
+	return strings.TrimRight(result, "\n")
+}
 
 // GenerateSlides routes the slide generation request to the appropriate
 // LLM provider based on the model name in the config.
 func GenerateSlides(cfg *config.Config, code string) (string, error) {
 	codeForPrompt, truncNote := prepareCodeForModel(code, cfg.Model)
 
-	systemPrompt := fmt.Sprintf(`You are a Slidev presentation generator. You output ONLY valid Slidev Markdown.
-Write all slide text in %s. Output nothing except the Slidev Markdown itself.`, cfg.Language)
+	systemPrompt := renderPrompt(systemPromptTpl, map[string]string{
+		"language": cfg.Language,
+	})
 
-	userPrompt := fmt.Sprintf(
-		`Read the project documentation and source code below. Then generate a Slidev Markdown presentation.
-
-YOU MUST produce between 8 and 15 slides. Each slide MUST be separated by --- on its own line.
-Every slide MUST start with a # heading. Do NOT put all content on one slide.
-
-The FIRST lines of your output must be exactly this (the global headmatter):
-
----
-theme: %s
-title: <your chosen title>
----
-
-After the headmatter, write slides like this. THIS IS THE EXACT PATTERN TO REPEAT:
-
-# Slide Title Here
-
-- Bullet point or content
-- Another point
-
----
-
-# Next Slide Title
-
-More content here.
-
----
-
-SLIDE PLAN — you must create separate slides for each of these topics:
-1. Cover/Title slide — project name, one-line description
-2. Project Overview — what the project does, key features (from README/docs)
-3. Tech Stack — languages, frameworks, dependencies used
-4. Architecture — high-level component overview
-5. Core Module 1 — explain the most important module with a code snippet
-6. Core Module 2 — explain another key module with a code snippet
-7. Data/Control Flow — include a mermaid diagram showing how components interact
-8. API/Interface Design — how users or other systems interact with the project
-9. Error Handling / Edge Cases — how the project handles failures
-10. Key Takeaways — summary of main insights
-
-For code snippets use fenced blocks with the language tag:
-
-`+"```"+`go {2-4|6-8}
-// actual code from the project, not placeholders
-`+"```"+`
-
-For diagrams use mermaid blocks:
-
-`+"```"+`mermaid
-graph TD
-    A[Component] --> B[Component]
-`+"```"+`
-
-CRITICAL RULES:
-- Output MUST contain at least 8 occurrences of --- (slide separators)
-- Every slide MUST begin with # (a top-level heading)
-- Do NOT write a single long text. SPLIT content across slides.
-- Use REAL code from the provided source, not placeholder examples.
-- Do NOT wrap output in a markdown code fence.
-%s
-PROJECT SOURCE:
-%s`,
-		cfg.Theme, truncNote, codeForPrompt)
-
-	// Provider routing is model-name based to keep the CLI model input simple.
-	var slides string
-	var err error
-	if isGeminiModel(cfg.Model) {
-		slides, err = generateSlidesWithGemini(cfg, systemPrompt, userPrompt)
-	} else if isAnthropicModel(cfg.Model) {
-		slides, err = generateSlidesWithAnthropic(cfg, systemPrompt, userPrompt)
-	} else if isLocalModel(cfg.Model) {
-		slides, err = generateSlidesWithLocalLLM(cfg, systemPrompt, userPrompt)
+	promptVars := map[string]string{
+		"theme":     cfg.Theme,
+		"truncNote": truncNote,
+		"code":      codeForPrompt,
+	}
+	var userPrompt string
+	if isLocalModel(cfg.Model) {
+		userPrompt = renderPrompt(localUserPromptTpl, promptVars)
 	} else {
-		slides, err = generateSlidesWithOpenAI(cfg, systemPrompt, userPrompt)
+		userPrompt = renderPrompt(cloudUserPromptTpl, promptVars)
 	}
-	if err != nil {
-		return "", err
+
+	// callProvider dispatches to the correct AI backend.
+	callProvider := func() (string, error) {
+		if isGeminiModel(cfg.Model) {
+			return generateSlidesWithGemini(cfg, systemPrompt, userPrompt)
+		} else if isAnthropicModel(cfg.Model) {
+			return generateSlidesWithAnthropic(cfg, systemPrompt, userPrompt)
+		} else if isLocalModel(cfg.Model) {
+			return generateSlidesWithLocalLLM(cfg, systemPrompt, userPrompt)
+		}
+		return generateSlidesWithOpenAI(cfg, systemPrompt, userPrompt)
 	}
-	return normalizeSlidevMarkdown(slides, cfg), nil
+
+	// Retry transient errors (timeouts, 429, 5xx) with exponential backoff.
+	var slides string
+	var lastErr error
+	for attempt := 0; attempt < DefaultRetryConfig.MaxAttempts; attempt++ {
+		if attempt > 0 {
+			delay := backoffDelay(DefaultRetryConfig, attempt)
+			fmt.Printf("  Retry %d/%d after error, waiting %v...\n", attempt, DefaultRetryConfig.MaxAttempts-1, delay.Round(time.Millisecond))
+			time.Sleep(delay)
+		}
+		slides, lastErr = callProvider()
+		if lastErr == nil {
+			break
+		}
+		if !isRetryable(lastErr) {
+			return "", lastErr
+		}
+	}
+	if lastErr != nil {
+		return "", fmt.Errorf("failed after %d attempts: %w", DefaultRetryConfig.MaxAttempts, lastErr)
+	}
+
+	normalized := normalizeSlidevMarkdown(slides, cfg)
+
+	// Validate that the output looks like a real multi-slide presentation.
+	// If the model returned prose instead of Slidev Markdown (common with small
+	// local models), warn the user rather than silently writing a broken file.
+	if isLocalModel(cfg.Model) {
+		if err := validateSlidevOutput(normalized); err != nil {
+			return "", err
+		}
+	}
+
+	return normalized, nil
+}
+
+// validateSlidevOutput returns an error when the output does not contain enough
+// slide separators to be a valid multi-slide presentation.
+func validateSlidevOutput(md string) error {
+	count := strings.Count(md, "\n---\n")
+	if count < 3 {
+		return fmt.Errorf(
+			"the local model returned plain text instead of Slidev slides (found %d slide separators, need at least 3).\n"+
+				"  Tip: use a larger model that follows instructions better, e.g.:\n"+
+				"    AI Model: local/qwen2.5-coder:7b\n"+
+				"    AI Model: local/qwen2.5-coder:14b\n"+
+				"    AI Model: local/mistral\n"+
+				"  Then run: ollama pull qwen2.5-coder:7b",
+			count,
+		)
+	}
+	return nil
 }
 
 // RequiresAPIKey returns true if the model needs a remote API key.
@@ -155,6 +171,11 @@ func prepareCodeForModel(code, model string) (string, string) {
 func maxPromptBytesForModel(model string) int {
 	lower := strings.ToLower(strings.TrimSpace(model))
 	switch {
+	case isLocalModel(lower):
+		// Local models typically have 8K-32K context windows.
+		// Instructions MUST stay visible inside the attention window.
+		// 12KB of code + ~2KB of prompt ≈ 14KB total (~3500 tokens).
+		return 12000
 	case strings.HasPrefix(lower, "claude"), strings.HasPrefix(lower, "anthropic/claude"):
 		return 85000
 	case strings.HasPrefix(lower, "gemini"), strings.HasPrefix(lower, "models/gemini"):
@@ -195,30 +216,50 @@ func truncateMiddleByBytes(s string, maxBytes int) string {
 
 var slidevFrontmatterRe = regexp.MustCompile(`(?s)\A---\s*\n(.*?)\n---\s*\n?`)
 
-// normalizeSlidevMarkdown enforces a valid global Slidev frontmatter block
-// and injects the selected theme reliably.
+// normalizeSlidevMarkdown enforces a valid global Slidev frontmatter block,
+// injects the selected theme, and preserves visual fields (background) that
+// the AI generated.
 func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 	md := strings.TrimSpace(raw)
 	body := md
 	title := "Code Architecture Presentation"
+	background := ""
 
 	if m := slidevFrontmatterRe.FindStringSubmatch(md); len(m) == 2 {
 		fm := m[1]
 		body = strings.TrimSpace(strings.TrimPrefix(md, m[0]))
 		for _, line := range strings.Split(fm, "\n") {
+			// SplitN(..., 2) keeps the full value even when it contains colons (e.g. URLs).
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) != 2 {
 				continue
 			}
 			key := strings.TrimSpace(strings.ToLower(parts[0]))
 			val := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
-			if key == "title" && val != "" {
-				title = val
+			switch key {
+			case "title":
+				if val != "" {
+					title = val
+				}
+			case "background":
+				if val != "" {
+					// Reconstruct the full value: the URL contains "://" so the
+					// right-hand side after the first ":" is only the part after
+					// the scheme separator. Re-join from parts[1] directly.
+					background = strings.TrimSpace(parts[1])
+				}
 			}
 		}
 	}
 
-	frontmatter := fmt.Sprintf("---\ntheme: %s\ntitle: %s\n---\n\n", yamlQuote(cfg.Theme), yamlQuote(title))
+	var fmParts []string
+	fmParts = append(fmParts, "theme: "+yamlQuote(cfg.Theme))
+	fmParts = append(fmParts, "title: "+yamlQuote(title))
+	if background != "" {
+		fmParts = append(fmParts, "background: "+background)
+	}
+	frontmatter := "---\n" + strings.Join(fmParts, "\n") + "\n---\n\n"
+
 	if body == "" {
 		body = "# Presentation\n"
 	}

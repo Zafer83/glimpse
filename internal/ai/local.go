@@ -27,6 +27,13 @@ import (
 
 const ollamaBaseURL = "http://127.0.0.1:11434"
 
+// ollamaTagsResponse represents the response from /api/tags listing available models.
+type ollamaTagsResponse struct {
+	Models []struct {
+		Name string `json:"name"`
+	} `json:"models"`
+}
+
 // Ollama native API types.
 
 type ollamaChatRequest struct {
@@ -36,6 +43,10 @@ type ollamaChatRequest struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	} `json:"messages"`
+	Options struct {
+		NumPredict  int     `json:"num_predict"`
+		Temperature float64 `json:"temperature"`
+	} `json:"options"`
 }
 
 type ollamaChatResponse struct {
@@ -76,6 +87,16 @@ func generateSlidesWithLocalLLM(cfg *config.Config, systemPrompt, userPrompt str
 		return "", fmt.Errorf("local llm error: model is empty")
 	}
 
+	// If the user entered just "local" (no specific model), auto-detect from Ollama.
+	if isGenericLocalInput(cfg.Model) {
+		detected, err := detectOllamaModel(cfg.LocalBaseURL, model)
+		if err == nil && detected != "" {
+			model = detected
+		}
+	}
+
+	fmt.Printf("  Using model: %s\n", model)
+
 	// Try OpenAI-compatible local servers first (e.g. llama.cpp /v1/chat/completions).
 	if text, err := generateSlidesWithLocalOpenAICompat(cfg, model, systemPrompt, userPrompt); err == nil {
 		return text, nil
@@ -85,10 +106,49 @@ func generateSlidesWithLocalLLM(cfg *config.Config, systemPrompt, userPrompt str
 	return generateSlidesWithOllama(cfg, model, systemPrompt, userPrompt)
 }
 
+// isGenericLocalInput returns true when the user entered just "local" or "ollama"
+// without specifying a particular model name.
+func isGenericLocalInput(raw string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	return normalized == "local" || normalized == "ollama"
+}
+
+// detectOllamaModel queries Ollama's /api/tags and returns the best available model.
+// If the preferred default is installed, it is returned. Otherwise the first
+// available model is used. Returns empty string if no models are found.
+func detectOllamaModel(baseURL, preferred string) (string, error) {
+	endpoint := strings.TrimRight(baseURL, "/") + "/api/tags"
+	if !strings.HasPrefix(endpoint, "http") {
+		endpoint = "http://" + endpoint
+	}
+
+	var resp ollamaTagsResponse
+	if _, err := doJSONRequest(http.MethodGet, endpoint, nil, nil, &resp); err != nil {
+		return "", err
+	}
+
+	if len(resp.Models) == 0 {
+		return "", fmt.Errorf("no models installed in Ollama")
+	}
+
+	// Check if the preferred model is available.
+	for _, m := range resp.Models {
+		name := strings.Split(m.Name, ":")[0] // strip tag for matching
+		if m.Name == preferred || name == strings.Split(preferred, ":")[0] {
+			return m.Name, nil
+		}
+	}
+
+	// Preferred not found — return the first available model.
+	return resp.Models[0].Name, nil
+}
+
 func generateSlidesWithOllama(cfg *config.Config, model, systemPrompt, userPrompt string) (string, error) {
 	var reqBody ollamaChatRequest
 	reqBody.Model = model
 	reqBody.Stream = false
+	reqBody.Options.NumPredict = 8192
+	reqBody.Options.Temperature = 0.05
 	reqBody.Messages = []struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -122,7 +182,7 @@ func generateSlidesWithLocalOpenAICompat(cfg *config.Config, model, systemPrompt
 	var reqBody localOpenAIChatRequest
 	reqBody.Model = model
 	reqBody.Temperature = 0.05
-	reqBody.MaxTokens = 4096
+	reqBody.MaxTokens = 8192
 	reqBody.Messages = []struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -170,7 +230,7 @@ func normalizeLocalModel(raw string) string {
 	model = strings.TrimPrefix(model, "ollama/")
 	model = strings.TrimPrefix(model, "/")
 	if strings.EqualFold(model, "local") || strings.EqualFold(model, "ollama") || model == "" {
-		return "llama3.2"
+		return "qwen2.5-coder:7b"
 	}
 	return model
 }
