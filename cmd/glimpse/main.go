@@ -41,6 +41,17 @@ import (
 	"golang.org/x/term"
 )
 
+// --- Constants ---
+
+const (
+	loaderTickInterval    = 110 * time.Millisecond
+	plainLoaderInterval   = 300 * time.Millisecond
+	progressBarWidth      = 26
+	progressInitialPct    = 8.0
+	progressMaxPct        = 97.0
+	progressCurveExponent = 10.0
+)
+
 var (
 	ColorBlue    = "\033[34m"
 	ColorCyan    = "\033[36m"
@@ -64,6 +75,14 @@ var version = "0.0.0"
 var forcePlainMode = "0"
 
 var semverTripletRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
+
+// Banner gradient colors ("Cyberpunk Night" theme).
+var (
+	bannerStartHex = "#00f2fe"
+	bannerEndHex   = "#7117ea"
+)
+
+// --- Version helpers ---
 
 func normalizeTripletVersion(raw string) (string, bool) {
 	m := semverTripletRe.FindStringSubmatch(strings.TrimSpace(raw))
@@ -93,6 +112,8 @@ func shortBannerVersion(full string) string {
 	return "v0.0"
 }
 
+// --- Terminal setup ---
+
 func initTerminalAppearance() {
 	if forcePlainMode == "1" {
 		ansiEnabled = false
@@ -100,7 +121,6 @@ func initTerminalAppearance() {
 	if os.Getenv("NO_COLOR") != "" {
 		ansiEnabled = false
 	}
-	// Whisky/Wine and some Windows shells do not interpret ANSI reliably.
 	if runtime.GOOS == "windows" && os.Getenv("FORCE_ANSI") != "1" {
 		ansiEnabled = false
 	}
@@ -121,6 +141,30 @@ func initTerminalAppearance() {
 	}
 }
 
+func setupInterruptHandler() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-ch
+		exitOnInterrupt()
+	}()
+}
+
+func exitOnInterrupt() {
+	fmt.Println()
+	fmt.Println(ColorRed + "[!] Aborted by user (Ctrl+C)." + ColorReset)
+	os.Exit(130)
+}
+
+func isInterruptErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "interrupted")
+}
+
+// --- Git helpers ---
+
 func gitOutput(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	out, err := cmd.Output()
@@ -131,10 +175,6 @@ func gitOutput(args ...string) (string, error) {
 }
 
 func autoVersionFromGit() (string, bool) {
-	// Versioning strategy:
-	// - major: fixed to 0 for now
-	// - minor: number of feat commits
-	// - build: total commit count
 	buildRaw, err := gitOutput("rev-list", "--count", "HEAD")
 	if err != nil {
 		return "", false
@@ -159,6 +199,8 @@ func autoVersionFromGit() (string, bool) {
 
 	return fmt.Sprintf("0.%d.%d", featCount, build), true
 }
+
+// --- User input ---
 
 func askBuffered(reader *bufio.Reader, prompt, defaultValue string) string {
 	fullPrompt := fmt.Sprintf("%s%s%s %s[%s]%s: ", ColorBold, ColorCyan, prompt, ColorYellow, defaultValue, ColorReset)
@@ -207,12 +249,10 @@ func ask(line *liner.State, reader *bufio.Reader, prompt, defaultValue string) s
 	if line != nil {
 		return askLine(line, prompt, defaultValue)
 	}
-
 	return askBuffered(reader, prompt, defaultValue)
 }
 
 func supportsLineEditing() bool {
-	// Some embedded IDE terminals report as TTY but can still break readline UIs.
 	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
 	if strings.Contains(termProgram, "jetbrains") {
 		return false
@@ -236,27 +276,7 @@ func promptInputReader() (*bufio.Reader, io.Closer) {
 	return bufio.NewReader(os.Stdin), nil
 }
 
-func setupInterruptHandler() {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-ch
-		exitOnInterrupt()
-	}()
-}
-
-func exitOnInterrupt() {
-	fmt.Println()
-	fmt.Println(ColorRed + "[!] Aborted by user (Ctrl+C)." + ColorReset)
-	os.Exit(130)
-}
-
-func isInterruptErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "interrupted")
-}
+// --- Slidev theme helpers ---
 
 func uniqueStrings(items []string) []string {
 	seen := map[string]bool{}
@@ -279,13 +299,11 @@ func resolveThemeCandidates(theme string) ([]string, bool) {
 		return []string{t}, true
 	}
 
-	// Auto-correct mixed form like "@slidev/theme-slidev-theme-dracula".
 	if strings.HasPrefix(t, "@slidev/theme-slidev-theme-") {
 		trimmed := strings.TrimPrefix(t, "@slidev/theme-")
 		return uniqueStrings([]string{trimmed, "@slidev/theme-" + strings.TrimPrefix(trimmed, "slidev-theme-")}), false
 	}
 
-	// Full package input (official/community/custom).
 	if strings.HasPrefix(t, "@") || strings.Contains(t, "/") {
 		candidates := []string{t}
 		if strings.HasPrefix(t, "@slidev/theme-") {
@@ -299,7 +317,6 @@ func resolveThemeCandidates(theme string) ([]string, bool) {
 		return uniqueStrings(candidates), false
 	}
 
-	// Short name input: try official first, then common community naming.
 	return uniqueStrings([]string{
 		"@slidev/theme-" + t,
 		"slidev-theme-" + t,
@@ -350,6 +367,8 @@ func ensureSlidevTheme(theme string) error {
 	return nil
 }
 
+// --- Progress loader ---
+
 func startFancyLoader(message string, profile termenv.Profile, startColor, endColor colorful.Color) func(doneText string) {
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -360,7 +379,7 @@ func startFancyLoader(message string, profile termenv.Profile, startColor, endCo
 		if !isTTY || !ansiEnabled {
 			fmt.Printf("%s%s%s\n", ColorMagenta, message, ColorReset)
 			start := time.Now()
-			ticker := time.NewTicker(300 * time.Millisecond)
+			ticker := time.NewTicker(plainLoaderInterval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -374,33 +393,31 @@ func startFancyLoader(message string, profile termenv.Profile, startColor, endCo
 		}
 
 		start := time.Now()
-		ticker := time.NewTicker(110 * time.Millisecond)
+		ticker := time.NewTicker(loaderTickInterval)
 		defer ticker.Stop()
 
 		render := func() {
 			elapsed := time.Since(start)
 			sec := elapsed.Seconds()
 
-			// Monotonic estimated curve: fast start, then smooth slowdown.
-			displayProgress := 8.0 + 89.0*(1.0-1.0/(1.0+sec/10.0))
-			if displayProgress > 97.0 {
-				displayProgress = 97.0
+			displayProgress := progressInitialPct + (progressMaxPct-progressInitialPct)*(1.0-1.0/(1.0+sec/progressCurveExponent))
+			if displayProgress > progressMaxPct {
+				displayProgress = progressMaxPct
 			}
 
-			barWidth := 26
-			filled := int(displayProgress / 100.0 * float64(barWidth))
+			filled := int(displayProgress / 100.0 * float64(progressBarWidth))
 			if filled < 0 {
 				filled = 0
 			}
-			if filled > barWidth {
-				filled = barWidth
+			if filled > progressBarWidth {
+				filled = progressBarWidth
 			}
 			var bar strings.Builder
-			denominator := barWidth - 1
+			denominator := progressBarWidth - 1
 			if denominator <= 0 {
 				denominator = 1
 			}
-			for i := 0; i < barWidth; i++ {
+			for i := 0; i < progressBarWidth; i++ {
 				if i < filled {
 					ratio := float64(i) / float64(denominator)
 					gradColor := startColor.BlendLuv(endColor, ratio).Hex()
@@ -436,7 +453,7 @@ func startFancyLoader(message string, profile termenv.Profile, startColor, endCo
 	return func(doneText string) {
 		close(stop)
 		<-done
-		finalBar := strings.Repeat("█", 26)
+		finalBar := strings.Repeat("█", progressBarWidth)
 		if ansiEnabled {
 			fmt.Printf("\r\033[2K%sProgress%s [%s] 100.0%% | ETA 0s | %s\n", ColorBlue, ColorReset, finalBar, doneText)
 		} else {
@@ -446,37 +463,20 @@ func startFancyLoader(message string, profile termenv.Profile, startColor, endCo
 	}
 }
 
-func main() {
-	initTerminalAppearance()
-	v := resolvedVersion()
+// --- Banner ---
 
-	if len(os.Args) > 1 {
-		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
-		if arg == "--version" || arg == "-v" || arg == "version" {
-			fmt.Printf("glimpse %s\n", v)
-			return
-		}
-	}
-
-	setupInterruptHandler()
-
+func renderBanner(v string, profile termenv.Profile, startColor, endColor colorful.Color) {
 	banner := `
    █████████  █████       █████ ██████   ██████ ███████████   █████████  ██████████
   ███░░░░░███░░███       ░░███ ░░██████ ██████ ░░███░░░░░███ ███░░░░░███░░███░░░░░█
- ███     ░░░  ░███        ░███  ░███░█████░███  ░███    ░███░███    ░░░  ░███  █ ░ 
-░███          ░███        ░███  ░███░░███ ░███  ░██████████ ░░█████████  ░██████   
-░███    █████ ░███        ░███  ░███ ░░░  ░███  ░███░░░░░░   ░░░░░░░░███ ░███░░█   
+ ███     ░░░  ░███        ░███  ░███░█████░███  ░███    ░███░███    ░░░  ░███  █ ░
+░███          ░███        ░███  ░███░░███ ░███  ░██████████ ░░█████████  ░██████
+░███    █████ ░███        ░███  ░███ ░░░  ░███  ░███░░░░░░   ░░░░░░░░███ ░███░░█
 ░░███  ░░███  ░███      █ ░███  ░███      ░███  ░███         ███    ░███ ░███ ░   █
  ░░█████████  ███████████ █████ █████     █████ █████       ░░█████████  ██████████
-  ░░░░░░░░░  ░░░░░░░░░░░ ░░░░░ ░░░░░     ░░░░░ ░░░░░         ░░░░░░░░░  ░░░░░░░░░░ 
+  ░░░░░░░░░  ░░░░░░░░░░░ ░░░░░ ░░░░░     ░░░░░ ░░░░░         ░░░░░░░░░  ░░░░░░░░░░
 
 `
-	// "Cyberpunk Night"
-	startColor, _ := colorful.Hex("#00f2fe")
-	endColor, _ := colorful.Hex("#7117ea")
-
-	p := termenv.ColorProfile()
-
 	lines := strings.Split(strings.Trim(banner, "\n"), "\n")
 
 	maxWidth := 0
@@ -492,7 +492,7 @@ func main() {
 			for x, char := range line {
 				ratio := float64(x) / float64(maxWidth)
 				gradColor := startColor.BlendLuv(endColor, ratio).Hex()
-				out := termenv.String(string(char)).Foreground(p.Color(gradColor))
+				out := termenv.String(string(char)).Foreground(profile.Color(gradColor))
 				fmt.Print(out)
 			}
 			fmt.Println()
@@ -502,17 +502,6 @@ func main() {
 	}
 	fmt.Println()
 
-	reader, readerCloser := promptInputReader()
-	if readerCloser != nil {
-		defer func() { _ = readerCloser.Close() }()
-	}
-	var line *liner.State
-	if supportsLineEditing() {
-		line = liner.NewLiner()
-		defer func() { _ = line.Close() }()
-		line.SetCtrlCAborts(true)
-	}
-
 	fmt.Println(ColorBlue + ColorBold + "\n        ✨ GLIMPSE ARCHITECT ✨" + ColorReset)
 	fmt.Println(ColorYellow + "                 " + shortBannerVersion(v) + ColorReset)
 	fmt.Println(ColorCyan + "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + ColorReset)
@@ -521,9 +510,12 @@ func main() {
 	fmt.Println(ColorGray + ColorDim + "  created by Zafer Kılıçaslan" + ColorReset)
 	fmt.Println("  (Abort anytime with " + ColorRed + "Ctrl+C" + ColorReset + ")")
 	fmt.Println("")
+}
 
+// --- User config prompting ---
+
+func promptUserConfig(line *liner.State, reader *bufio.Reader) *config.Config {
 	if line != nil {
-		// Enable path completion only for the project path input.
 		line.SetCompleter(func(input string) (c []string) {
 			path := strings.TrimSpace(input)
 			if path == "" {
@@ -544,11 +536,13 @@ func main() {
 	if line != nil {
 		line.SetCompleter(nil)
 	}
+
 	theme := ask(line, reader, "Slidev Theme", "seriph")
 	if err := ensureSlidevTheme(theme); err != nil {
 		fmt.Printf("%s❌ Theme error: %v%s\n", ColorRed, err, ColorReset)
 		os.Exit(1)
 	}
+
 	model := ask(line, reader, "AI Model (gpt-4o, gemini-2.0-flash, claude-3-5-sonnet-latest, local)", "gemini-2.0-flash")
 	lang := ask(line, reader, "Language", "de")
 	out := ask(line, reader, "File Name", "slides.md")
@@ -569,20 +563,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg := &config.Config{
-		APIKey: apiKey, LocalBaseURL: localBaseURL, Theme: theme, Model: model, Language: lang, Output: out,
+	return &config.Config{
+		APIKey:       apiKey,
+		LocalBaseURL: localBaseURL,
+		Theme:        theme,
+		Model:        model,
+		Language:     lang,
+		Output:       out,
+		ProjectPath:  projectPath,
 	}
+}
 
-	// Scan code first, then hand one consolidated prompt to the selected model provider.
-	fmt.Printf("\n%s🔍 Scanning files in: %s%s%s\n", ColorBlue, ColorBold, projectPath, ColorReset)
-	code, err := crawler.CollectCode(projectPath)
+// --- Code processing ---
+
+func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, endColor colorful.Color) {
+	fmt.Printf("\n%s🔍 Scanning files in: %s%s%s\n", ColorBlue, ColorBold, cfg.ProjectPath, ColorReset)
+	code, err := crawler.CollectCode(cfg.ProjectPath)
 	if err != nil || len(code) == 0 {
 		fmt.Printf("%s⚠️ No files found.%s\n", ColorYellow, ColorReset)
 		return
 	}
 
 	fmt.Printf("%s🧠 AI is analyzing code...%s\n", ColorMagenta, ColorReset)
-	stopLoader := startFancyLoader("🧠 AI is analyzing code...", p, startColor, endColor)
+	stopLoader := startFancyLoader("🧠 AI is analyzing code...", profile, startColor, endColor)
 	slides, err := ai.GenerateSlides(cfg, code)
 	if err != nil {
 		stopLoader("🧠 AI analysis stopped.")
@@ -591,29 +594,74 @@ func main() {
 	}
 	stopLoader("🧠 AI analysis complete.")
 
-	err = os.WriteFile(cfg.Output, []byte(slides), 0644)
-	if err != nil {
+	if err := os.WriteFile(cfg.Output, []byte(slides), 0644); err != nil {
 		fmt.Printf("%s❌ Error while saving: %v%s\n", ColorRed, err, ColorReset)
 		return
 	}
 	fmt.Printf("\n%s✅ DONE!%s Your presentation is ready: %s\n\n", ColorGreen+ColorBold, ColorReset, cfg.Output)
+}
 
+// --- Slidev launch ---
+
+func promptAndLaunchSlidev(line *liner.State, reader *bufio.Reader, output string) {
 	runSlidev := strings.ToLower(strings.TrimSpace(ask(line, reader, "Start Slidev now? (Y/n)", "Y")))
-	if runSlidev == "y" || runSlidev == "yes" || runSlidev == "" {
-		fmt.Printf("%s🚀 Starting Slidev: npx --yes @slidev/cli %s%s\n", ColorCyan, cfg.Output, ColorReset)
-		cmd := exec.Command("npx", "--yes", "@slidev/cli", cfg.Output)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("%s⚠️ @slidev/cli failed, trying legacy command...%s\n", ColorYellow, ColorReset)
-			legacy := exec.Command("npx", "slidev", cfg.Output)
-			legacy.Stdin = os.Stdin
-			legacy.Stdout = os.Stdout
-			legacy.Stderr = os.Stderr
-			if legacyErr := legacy.Run(); legacyErr != nil {
-				fmt.Printf("%s❌ Failed to start Slidev: %v%s\n", ColorRed, legacyErr, ColorReset)
-			}
+	if runSlidev != "y" && runSlidev != "yes" && runSlidev != "" {
+		return
+	}
+
+	fmt.Printf("%s🚀 Starting Slidev: npx --yes @slidev/cli %s%s\n", ColorCyan, output, ColorReset)
+	cmd := exec.Command("npx", "--yes", "@slidev/cli", output)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("%s⚠️ @slidev/cli failed, trying legacy command...%s\n", ColorYellow, ColorReset)
+		legacy := exec.Command("npx", "slidev", output)
+		legacy.Stdin = os.Stdin
+		legacy.Stdout = os.Stdout
+		legacy.Stderr = os.Stderr
+		if legacyErr := legacy.Run(); legacyErr != nil {
+			fmt.Printf("%s❌ Failed to start Slidev: %v%s\n", ColorRed, legacyErr, ColorReset)
 		}
 	}
+}
+
+// --- Main ---
+
+func main() {
+	initTerminalAppearance()
+	v := resolvedVersion()
+
+	if len(os.Args) > 1 {
+		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
+		if arg == "--version" || arg == "-v" || arg == "version" {
+			fmt.Printf("glimpse %s\n", v)
+			return
+		}
+	}
+
+	setupInterruptHandler()
+
+	startColor, _ := colorful.Hex(bannerStartHex)
+	endColor, _ := colorful.Hex(bannerEndHex)
+	profile := termenv.ColorProfile()
+
+	renderBanner(v, profile, startColor, endColor)
+
+	reader, readerCloser := promptInputReader()
+	if readerCloser != nil {
+		defer func() { _ = readerCloser.Close() }()
+	}
+	var line *liner.State
+	if supportsLineEditing() {
+		line = liner.NewLiner()
+		defer func() { _ = line.Close() }()
+		line.SetCtrlCAborts(true)
+	}
+
+	cfg := promptUserConfig(line, reader)
+
+	scanAndGenerate(cfg, profile, startColor, endColor)
+
+	promptAndLaunchSlidev(line, reader, cfg.Output)
 }

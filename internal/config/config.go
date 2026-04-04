@@ -24,4 +24,5 @@ type Config struct {
 	Model        string
 	Language     string
 	Output       string
+	ProjectPath  string
 }
