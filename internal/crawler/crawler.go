@@ -20,10 +20,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-var supportedExtensions = map[string]bool{
+var codeExtensions = map[string]bool{
 	".go":   true,
 	".js":   true,
 	".ts":   true,
@@ -46,50 +47,82 @@ var supportedExtensions = map[string]bool{
 	".sh":   true,
 }
 
-// CollectCode walks the project tree and concatenates supported source files.
+var docExtensions = map[string]bool{
+	".md":  true,
+	".mdx": true,
+}
+
+func shouldSkipPath(path string) bool {
+	lowPath := strings.ToLower(path)
+	return strings.Contains(lowPath, "node_modules") ||
+		strings.Contains(lowPath, ".git") ||
+		strings.Contains(lowPath, "dist") ||
+		strings.Contains(lowPath, ".idea") ||
+		strings.Contains(lowPath, "vendor") ||
+		strings.Contains(lowPath, "build") ||
+		strings.HasSuffix(lowPath, "package-lock.json") ||
+		strings.HasSuffix(lowPath, "pnpm-lock.yaml") ||
+		strings.HasSuffix(lowPath, "yarn.lock") ||
+		strings.HasPrefix(filepath.Base(path), ".")
+}
+
+// CollectCode walks the project tree and concatenates docs + source code.
+// Documentation is placed first so the model can infer intent/story before deep code details.
 func CollectCode(root string) (string, error) {
 	absPath, err := filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve project path: %w", err)
 	}
-	var builder strings.Builder
 
-	err = filepath.Walk(absPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+	var docs []string
+	var code []string
+
+	err = filepath.Walk(absPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
 			return nil
 		}
-
 		if info.IsDir() {
 			return nil
 		}
-
-		lowPath := strings.ToLower(path)
-		// Skip large/generated/sensitive folders to keep prompts focused and fast.
-		if strings.Contains(lowPath, "node_modules") ||
-			strings.Contains(lowPath, ".git") ||
-			strings.Contains(lowPath, "dist") ||
-			strings.Contains(lowPath, ".idea") ||
-			strings.Contains(lowPath, "vendor") ||
-			strings.Contains(lowPath, "build") ||
-			strings.HasPrefix(filepath.Base(path), ".") {
+		if shouldSkipPath(path) {
 			return nil
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if !supportedExtensions[ext] {
+		if !docExtensions[ext] && !codeExtensions[ext] {
 			return nil
 		}
 
-		content, err := os.ReadFile(path)
-		if err != nil {
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		text := string(content)
+		if strings.TrimSpace(text) == "" {
 			return nil
 		}
 
-		builder.WriteString(fmt.Sprintf("\n\n// --- FILE: %s ---\n", path))
-		builder.Write(content)
-
+		if docExtensions[ext] {
+			docs = append(docs, fmt.Sprintf("\n\n# --- DOC FILE: %s ---\n%s", path, text))
+		} else {
+			code = append(code, fmt.Sprintf("\n\n// --- CODE FILE: %s ---\n%s", path, text))
+		}
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
 
-	return builder.String(), err
+	sort.Strings(docs)
+	sort.Strings(code)
+
+	var builder strings.Builder
+	builder.WriteString("\n\n# PROJECT CONTEXT ORDER: DOCUMENTATION FIRST, CODE SECOND")
+	for _, part := range docs {
+		builder.WriteString(part)
+	}
+	for _, part := range code {
+		builder.WriteString(part)
+	}
+	return builder.String(), nil
 }

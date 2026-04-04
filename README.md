@@ -51,16 +51,21 @@ Glimpse uses `Major.Minor.Build`.
 
 - Runtime output:
   - `./glimpse --version`
+- Base version is stored in `VERSION_BASE` (`Major.Minor`).
+- Build number is persisted in `.version/build_counter` and auto-incremented by scripts.
 
-Automatic version strategy:
+Automatic local build with version increment:
 
-- `Major` = `0` (current project phase)
-- `Minor` = number of commits with `feat:` (or `feat(...)`)
-- `Build` = total git commit count
+```bash
+scripts/build.sh
+```
 
-Manual override is still possible if needed:
+Check current/next version manually:
 
-- `go build -ldflags "-X main.version=1.2.3" -o glimpse ./cmd/glimpse`
+```bash
+scripts/version.sh current
+scripts/version.sh next
+```
 
 ## Release Script
 

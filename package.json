@@ -1,8 +1,10 @@
 {
   "dependencies": {
+    "@slidev/theme-default": "^0.25.0",
     "@slidev/theme-seriph": "^0.25.0"
   },
   "devDependencies": {
+    "@slidev/theme-apple-basic": "^0.25.1",
     "slidev-theme-dracula": "^0.2.0"
   }
 }

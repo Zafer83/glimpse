@@ -15,5 +15,8 @@ slides.md
 go.import.xml
 *.iml
 
+# Local auto-version counter
+.version/
+
 .claude
 CLAUDE.md

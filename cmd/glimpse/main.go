@@ -613,14 +613,7 @@ func promptAndLaunchSlidev(line *liner.State, reader *bufio.Reader, output strin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("%s⚠️ @slidev/cli failed, trying legacy command...%s\n", ColorYellow, ColorReset)
-		legacy := exec.Command("npx", "slidev", output)
-		legacy.Stdin = os.Stdin
-		legacy.Stdout = os.Stdout
-		legacy.Stderr = os.Stderr
-		if legacyErr := legacy.Run(); legacyErr != nil {
-			fmt.Printf("%s❌ Failed to start Slidev: %v%s\n", ColorRed, legacyErr, ColorReset)
-		}
+		fmt.Printf("%s❌ Failed to start Slidev: %v%s\n", ColorRed, err, ColorReset)
 	}
 }
 

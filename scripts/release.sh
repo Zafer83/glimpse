@@ -12,10 +12,7 @@ if [[ $# -gt 1 ]]; then
 fi
 
 auto_version() {
-  local build_count feat_count
-  build_count="$(git -C "${ROOT_DIR}" rev-list --count HEAD)"
-  feat_count="$(git -C "${ROOT_DIR}" log --pretty=%s | grep -Eic '^feat(\(|:)' || true)"
-  echo "0.${feat_count}.${build_count}"
+  "${ROOT_DIR}/scripts/version.sh" next
 }
 
 VERSION="${1:-$(auto_version)}"
