@@ -18,6 +18,7 @@ package ai
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/Zafer83/glimpse/internal/config"
@@ -28,59 +29,90 @@ import (
 func GenerateSlides(cfg *config.Config, code string) (string, error) {
 	codeForPrompt, truncNote := prepareCodeForModel(code, cfg.Model)
 
-	systemPrompt := fmt.Sprintf(
-		"You are Glimpse, an expert AI architect. Generate a professional Slidev "+
-			"presentation from source code. Write all slide content in %s.", cfg.Language)
+	systemPrompt := fmt.Sprintf(`You generate Slidev presentations. Write all content in %s.
+Output ONLY raw Slidev Markdown — no code fences around it, no explanation.`, cfg.Language)
 
 	userPrompt := fmt.Sprintf(
-		`Create a Slidev Markdown presentation from the source code below.
+		`Analyze the source code below and create a Slidev Markdown presentation.
 
-CRITICAL FORMAT RULES — the output MUST follow this structure exactly:
-
-1. The file MUST start with a YAML frontmatter block as the very first thing.
-   This block sets the global theme and title:
+EXACT FORMAT — follow this structure precisely:
 
 ---
 theme: %s
-title: <a short descriptive title>
+title: <descriptive project title>
 ---
 
-2. Each subsequent slide is separated by a line containing only "---".
-   Slides MAY have their own per-slide frontmatter for layout, background, or class:
+# Project Title
+
+Short project summary.
+
+---
+
+# Architecture Overview
+
+- Key architectural decisions
+- Main components and their roles
+
+---
+
+# Core Logic
+
+Explain the most important business logic with a code snippet:
+
+`+"```"+`go {1-3|5-8}
+func example() {
+    // highlighted code
+}
+`+"```"+`
+
+---
+
+# System Flow
+
+`+"```"+`mermaid
+graph LR
+  A[Input] --> B[Process] --> C[Output]
+`+"```"+`
 
 ---
 layout: center
-class: text-white
 ---
 
-3. Valid layout values include: default, center, cover, two-cols, image-right, image-left, fact, statement, quote, section.
+# Key Takeaways
 
-CONTENT GUIDELINES:
-- Start with a cover slide (layout: cover) summarizing the project.
-- Highlight core business logic and architectural patterns.
-- Use fenced code blocks with Slidev focus markers, e.g. {1-5|7-10}.
-- Include at least one Mermaid diagram (use a fenced mermaid block).
-- End with a summary or key-takeaways slide.
-- Aim for 8-15 slides total.
+- Summary point 1
+- Summary point 2
 
-Return ONLY the raw Markdown content. No wrapping in a code fence. No explanation before or after.
+RULES:
+1. Start with "---" then theme/title frontmatter, then "---".
+2. Every slide begins with "# Title" as the first content line.
+3. Separate slides with a blank line, then "---", then a blank line.
+4. Per-slide frontmatter (layout, class) goes between "---" and the heading.
+5. Use fenced code blocks with language tags and Slidev line highlights {1-3|5-7}.
+6. Include at least one mermaid diagram.
+7. Create 8-15 slides covering: overview, architecture, key modules, important logic, data flow, takeaways.
+8. Each slide should focus on ONE topic with a clear heading.
 %s
 SOURCE CODE:
 %s`,
 		cfg.Theme, truncNote, codeForPrompt)
 
 	// Provider routing is model-name based to keep the CLI model input simple.
+	var slides string
+	var err error
 	if isGeminiModel(cfg.Model) {
-		return generateSlidesWithGemini(cfg, systemPrompt, userPrompt)
+		slides, err = generateSlidesWithGemini(cfg, systemPrompt, userPrompt)
+	} else if isAnthropicModel(cfg.Model) {
+		slides, err = generateSlidesWithAnthropic(cfg, systemPrompt, userPrompt)
+	} else if isLocalModel(cfg.Model) {
+		slides, err = generateSlidesWithLocalLLM(cfg, systemPrompt, userPrompt)
+	} else {
+		slides, err = generateSlidesWithOpenAI(cfg, systemPrompt, userPrompt)
 	}
-	if isAnthropicModel(cfg.Model) {
-		return generateSlidesWithAnthropic(cfg, systemPrompt, userPrompt)
+	if err != nil {
+		return "", err
 	}
-	if isLocalModel(cfg.Model) {
-		return generateSlidesWithLocalLLM(cfg, systemPrompt, userPrompt)
-	}
-
-	return generateSlidesWithOpenAI(cfg, systemPrompt, userPrompt)
+	return normalizeSlidevMarkdown(slides, cfg), nil
 }
 
 // RequiresAPIKey returns true if the model needs a remote API key.
@@ -160,4 +192,101 @@ func truncateMiddleByBytes(s string, maxBytes int) string {
 	head := s[:headLen]
 	tail := s[len(s)-tailLen:]
 	return head + marker + tail
+}
+
+var slidevFrontmatterRe = regexp.MustCompile(`(?s)\A---\s*\n(.*?)\n---\s*\n?`)
+
+// normalizeSlidevMarkdown enforces a valid global Slidev frontmatter block
+// and injects the selected theme reliably.
+func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
+	md := strings.TrimSpace(raw)
+	body := md
+	title := "Code Architecture Presentation"
+
+	if m := slidevFrontmatterRe.FindStringSubmatch(md); len(m) == 2 {
+		fm := m[1]
+		body = strings.TrimSpace(strings.TrimPrefix(md, m[0]))
+		for _, line := range strings.Split(fm, "\n") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(strings.ToLower(parts[0]))
+			val := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+			if key == "title" && val != "" {
+				title = val
+			}
+		}
+	}
+
+	frontmatter := fmt.Sprintf("---\ntheme: %s\ntitle: %s\n---\n\n", yamlQuote(cfg.Theme), yamlQuote(title))
+	if body == "" {
+		body = "# Presentation\n"
+	}
+	body = ensureTitleSlide(body, title)
+	body = ensureSlideBreakPerTopLevelHeading(body)
+	return frontmatter + body
+}
+
+func yamlQuote(v string) string {
+	escaped := strings.ReplaceAll(strings.TrimSpace(v), "'", "''")
+	return "'" + escaped + "'"
+}
+
+func ensureTitleSlide(body, title string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return fmt.Sprintf("# %s\n", title)
+	}
+	for _, line := range strings.Split(trimmed, "\n") {
+		l := strings.TrimSpace(line)
+		if l == "" {
+			continue
+		}
+		if strings.HasPrefix(l, "# ") {
+			return trimmed
+		}
+		break
+	}
+	return fmt.Sprintf("# %s\n\n%s", title, trimmed)
+}
+
+func ensureSlideBreakPerTopLevelHeading(body string) string {
+	lines := strings.Split(body, "\n")
+	var out []string
+	inFence := false
+	firstTopLevelSeen := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			out = append(out, line)
+			continue
+		}
+
+		if !inFence && strings.HasPrefix(trimmed, "# ") {
+			if !firstTopLevelSeen {
+				firstTopLevelSeen = true
+			} else {
+				// Ensure a clean slide separator before each subsequent top-level heading.
+				lastIdx := len(out) - 1
+				for lastIdx >= 0 && strings.TrimSpace(out[lastIdx]) == "" {
+					lastIdx--
+				}
+				if lastIdx < 0 || strings.TrimSpace(out[lastIdx]) != "---" {
+					out = append(out, "", "---", "")
+				}
+			}
+		}
+
+		// Avoid adding an extra trailing blank line for the final input line.
+		if i == len(lines)-1 && line == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+
+	return strings.TrimSpace(strings.Join(out, "\n")) + "\n"
 }
