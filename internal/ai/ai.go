@@ -361,6 +361,11 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 		}
 	}
 
+	// Ensure cover slide always has a background image.
+	if background == "" {
+		background = defaultCoverBackground
+	}
+
 	var fmParts []string
 	fmParts = append(fmParts, "theme: "+yamlQuote(cfg.Theme))
 	fmParts = append(fmParts, "layout: "+layout)
@@ -368,9 +373,7 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 	if author != "" {
 		fmParts = append(fmParts, "author: "+yamlQuote(author))
 	}
-	if background != "" {
-		fmParts = append(fmParts, "background: "+background)
-	}
+	fmParts = append(fmParts, "background: "+background)
 	frontmatter := "---\n" + strings.Join(fmParts, "\n") + "\n---\n\n"
 
 	if body == "" {
@@ -382,7 +385,34 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 	// Remove any mermaid code blocks — Slidev renders them with errors.
 	body = removeMermaidBlocks(body)
 
+	// Fix malformed per-slide frontmatter: remove blank lines between --- and
+	// YAML keys so Slidev parses them correctly.
+	body = fixSlideFrontmatter(body)
+
 	return frontmatter + body
+}
+
+// defaultCoverBackground is the fallback Unsplash image for the cover slide.
+const defaultCoverBackground = "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200"
+
+// slideFrontmatterBlockRe matches per-slide frontmatter blocks: ---\n...\n---
+var slideFrontmatterBlockRe = regexp.MustCompile(`(?m)^---\s*\n((?:.*\n)*?)---\s*$`)
+
+// fixSlideFrontmatter removes blank lines inside per-slide frontmatter blocks.
+// Slidev requires frontmatter to be compact: ---\nkey: value\n--- with no gaps.
+func fixSlideFrontmatter(body string) string {
+	return slideFrontmatterBlockRe.ReplaceAllStringFunc(body, func(block string) string {
+		lines := strings.Split(block, "\n")
+		var cleaned []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			// Keep --- markers and non-empty lines.
+			if trimmed != "" {
+				cleaned = append(cleaned, line)
+			}
+		}
+		return strings.Join(cleaned, "\n")
+	})
 }
 
 // mermaidBlockRe matches ```mermaid ... ``` blocks.

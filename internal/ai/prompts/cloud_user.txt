@@ -10,13 +10,13 @@ Base the presentation STORY on the documentation. Use code only to illustrate ke
 YOU MUST produce between 10 and 15 slides. Each slide MUST be separated by --- on its own line.
 Every slide MUST start with a # heading. Do NOT put all content on one slide.
 
-STEP 1 - FIRST SLIDE MUST BE EXACTLY THIS FORMAT (cover slide):
+STEP 1 - FIRST SLIDE MUST USE THIS EXACT FORMAT (cover with background):
 
 ---
 theme: '{{theme}}'
 layout: cover
-author: Project Author
 title: '<your chosen title>'
+background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
 ---
 
 # <Project Title>
@@ -29,89 +29,23 @@ title: '<your chosen title>'
 
 ---
 
-Pick a title that matches the project topic.
+Pick a background URL from Unsplash that matches the project topic.
+Format: https://images.unsplash.com/photo-<ID>?auto=format&fit=crop&w=1200
 
-STEP 2 - LAST SLIDE MUST BE EXACTLY THIS FORMAT (end slide):
-
----
-layout: end
----
-
-# Vielen Dank!
-
-Fragen? Gerne jetzt!
+STEP 2 - LAST SLIDE MUST USE THIS EXACT FORMAT (Thank You outro with background):
 
 ---
+layout: cover
+background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200
+---
 
-STEP 3 - SLIDE PLAN (create one slide per topic):
+# Thank You
 
-1. Cover slide (layout: cover) - project name, one-line description
-2. Project Overview (layout: default) - what the project does, key features (from documentation)
-3. Problem & Motivation (layout: default) - what problem does it solve, why was it built
-4. Tech Stack (layout: two-cols) - languages, frameworks, dependencies
-5. Architecture (layout: default) - high-level component overview with bullet points
-6. Core Module 1 (layout: default) - explain the most important module with a code snippet
-7. Core Module 2 (layout: image-right) - explain another key module
-8. Data/Control Flow (layout: default) - describe how components interact (use bullet points or a text diagram, NOT mermaid)
-9. API/Interface Design (layout: default) - how users or other systems interact
-10. Key Design Decisions (layout: quote or statement) - important architectural choices
-11-14. Additional topics from documentation and source code
-LAST. Thank You (layout: end)
-
-STEP 4 - AVAILABLE SLIDEV LAYOUTS (use the correct ones):
-
-- layout: cover — Cover page with title
-- layout: end — Final "Thank You" page
-- layout: default — Standard content slide
-- layout: center — Content centered on screen
-- layout: intro — Introduction with title, description, author
-- layout: section — Section divider between topics
-- layout: statement — Bold statement/affirmation
-- layout: fact — Prominent fact or data point
-- layout: quote — Quotation with prominence
-- layout: image-right — Image right, content left
-- layout: image-left — Image left, content right
-- layout: image — Full-screen image
-- layout: two-cols — Two columns (use ::right:: separator)
-- layout: two-cols-header — Header spanning both columns (use ::left:: and ::right::)
-- layout: full — Full screen content
-- layout: iframe — Embedded web page
-- layout: none — No styling
-
-STEP 5 - SLIDE FORMAT EXAMPLES:
-
-Regular slide:
+Questions? Feedback?
 
 ---
 
-# Slide Title
-
-- Bullet point
-- Another point
-
----
-
-Two-column slide:
-
----
-layout: two-cols
----
-
-# Left Column
-
-- Item 1
-- Item 2
-
-::right::
-
-# Right Column
-
-- Item 3
-- Item 4
-
----
-
-Image-right slide:
+STEP 3 - AT LEAST 3 SLIDES MUST USE image-right OR image-left WITH AN image KEY:
 
 ---
 layout: image-right
@@ -124,27 +58,42 @@ Content here.
 
 ---
 
-Section divider:
+Pick different Unsplash images that match each slide's topic (code, architecture, data, cloud, etc.).
 
----
-layout: section
----
+STEP 4 - SLIDE PLAN (create one slide per topic):
 
-# New Section Title
+1. Cover slide (layout: cover + background) - project name, one-line description
+2. Project Overview (layout: default) - what the project does, key features (from documentation)
+3. Problem & Motivation (layout: image-right + image) - what problem does it solve
+4. Tech Stack (layout: two-cols) - languages, frameworks, dependencies
+5. Architecture (layout: image-left + image) - high-level component overview
+6. Core Module 1 (layout: default) - explain the most important module with a code snippet
+7. Core Module 2 (layout: image-right + image) - explain another key module
+8. Data/Control Flow (layout: default) - describe how components interact with bullet points
+9. API/Interface Design (layout: default) - how users or other systems interact
+10. Key Design Decisions (layout: statement) - important architectural choices
+11-14. Additional topics from documentation and source code
+LAST. Thank You (layout: cover + background)
 
----
+STEP 5 - AVAILABLE SLIDEV LAYOUTS:
 
-Statement slide:
+- layout: cover — Cover page (use with background: URL)
+- layout: default — Standard content slide
+- layout: center — Content centered on screen
+- layout: intro — Introduction with title, description, author
+- layout: section — Section divider between topics
+- layout: statement — Bold statement/affirmation
+- layout: fact — Prominent fact or data point
+- layout: quote — Quotation with prominence
+- layout: image-right — Image right, content left (use with image: URL)
+- layout: image-left — Image left, content right (use with image: URL)
+- layout: image — Full-screen image (use with image: URL)
+- layout: two-cols — Two columns (use ::right:: separator)
+- layout: two-cols-header — Header + two columns (use ::left:: and ::right::)
+- layout: full — Full screen content
+- layout: end — Simple end page (prefer layout: cover for Thank You)
 
----
-layout: statement
----
-
-# Key Insight Here
-
----
-
-For code snippets use fenced blocks with the language tag:
+STEP 6 - CODE SNIPPETS:
 
 ```go
 // actual code from the project, not placeholders
@@ -156,14 +105,15 @@ func main() {
 CRITICAL RULES:
 - Output MUST contain at least 10 occurrences of --- (slide separators)
 - EVERY slide MUST begin with # (a top-level heading)
-- FIRST slide MUST use layout: cover
-- LAST slide MUST use layout: end
-- Do NOT use mermaid code blocks — Slidev renders them incorrectly. Use bullet points or text diagrams instead.
-- Use at least 3 different layout types across the presentation
-- Do NOT write a single long text. SPLIT content across slides.
+- FIRST slide: layout: cover with background: <Unsplash URL>
+- LAST slide: layout: cover with background: <Unsplash URL> (Thank You outro)
+- AT LEAST 3 middle slides: layout: image-right or image-left with image: <Unsplash URL>
+- Do NOT use mermaid code blocks. Use bullet points or text diagrams instead.
+- Do NOT leave blank lines inside frontmatter blocks (between --- markers).
+- Use at least 4 different layout types across the presentation.
 - Use REAL code from the provided source, not placeholder examples.
 - Do NOT wrap output in a markdown code fence.
-- PRIORITIZE documentation content for the narrative — the docs tell you WHAT to present.
+- PRIORITIZE documentation content for the narrative.
 - For two-cols layout, use ::right:: to separate columns.
 {{truncNote}}
 PROJECT SOURCE:

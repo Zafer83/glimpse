@@ -9,14 +9,30 @@
 node_modules/
 dist/
 slides.md
+package-lock.json
+vite.config.ts
 
-# IDE & Temporary files
+# IDE
 .idea/
-go.import.xml
 *.iml
+*.iws
+go.import.xml
+go.imports.xml
+.vscode/
+
+# Go
+go.sum
+
+# OS artifacts
+.DS_Store
+Thumbs.db
 
 # Local auto-version counter
 .version/
 
-.claude
+# Build output
+/dist/
+
+# Claude Code
+.claude/
 CLAUDE.md

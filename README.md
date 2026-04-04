@@ -127,6 +127,65 @@ export GLIMPSE_API_KEY=sk-abc123
 ./glimpse -v
 ```
 
+### CI/CD & Pipeline Integration
+
+Glimpse lässt sich vollständig non-interaktiv in CI/CD-Pipelines einbinden.
+Sobald `--path` gesetzt ist, werden keine interaktiven Eingaben erwartet.
+
+**GitHub Actions Beispiel:**
+
+```yaml
+- name: Generate presentation
+  env:
+    GLIMPSE_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  run: |
+    ./glimpse --path . --model gpt-4o --theme seriph --lang en --output slides.md
+```
+
+**Shell-Skript Beispiel (mit Ollama):**
+
+```bash
+#!/bin/bash
+set -e
+./glimpse --path "$PROJECT_DIR" --model local --output slides.md
+echo "Presentation generated: slides.md"
+```
+
+**Umgebungsvariablen:**
+
+| Variable | Beschreibung |
+|----------|-------------|
+| `GLIMPSE_API_KEY` | API-Key (Alternative zu `--api-key` Flag) |
+| `NO_COLOR` | Deaktiviert Farb-Ausgabe (Standard für CI) |
+| `GLIMPSE_NO_ANSI` | Deaktiviert ANSI-Escape-Codes explizit |
+
+**Exit-Codes:**
+
+| Code | Bedeutung |
+|------|-----------|
+| `0` | Erfolgreich |
+| `1` | Fehler (fehlender API-Key, Scan-Fehler, AI-Fehler) |
+| `130` | Abbruch durch Benutzer (Ctrl+C) |
+
+### Supported File Types
+
+Glimpse erkennt und priorisiert automatisch:
+
+**Dokumentation (höchste Priorität — 60% Budget):**
+
+| Format | Endung |
+|--------|--------|
+| Markdown | `.md`, `.mdx` |
+| Plain Text | `.txt`, `.rst` |
+| Word | `.docx` (native Go-Extraktion) |
+| PDF | `.pdf` (native Go-Extraktion) |
+
+**Business Logic (35% Budget):**
+`.go`, `.js`, `.ts`, `.jsx`, `.tsx`, `.py`, `.java`, `.rb`, `.php`, `.cs`, `.cpp`, `.c`, `.h`, `.rs`, `.sql`
+
+**Support-Dateien (5% Budget):**
+Tests, Configs, Migrations, Generated Code — werden automatisch klassifiziert und nachrangig behandelt.
+
 ## Versioning
 
 Glimpse uses `Major.Minor.Build`.

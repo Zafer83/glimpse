@@ -18,11 +18,13 @@ package crawler
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
+
+	"github.com/ledongthuc/pdf"
 )
 
 // extractDocxText reads a .docx file and returns the plain text content.
@@ -92,17 +94,29 @@ func parseDocumentXML(r io.Reader) (string, error) {
 	return strings.TrimSpace(result.String()), nil
 }
 
-// extractPDFText extracts text from a PDF using the pdftotext command-line tool.
-// Returns an error if pdftotext is not installed.
+// extractPDFText extracts text from a PDF using a pure Go library.
+// No external tools (pdftotext, poppler) required.
 func extractPDFText(path string) (string, error) {
-	bin, err := exec.LookPath("pdftotext")
+	f, r, err := pdf.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("pdftotext not found: install poppler-utils to read PDF files")
+		return "", fmt.Errorf("open pdf: %w", err)
 	}
+	defer f.Close()
 
-	out, err := exec.Command(bin, "-layout", path, "-").Output()
-	if err != nil {
-		return "", fmt.Errorf("pdftotext failed for %s: %w", path, err)
+	var buf bytes.Buffer
+	for i := 1; i <= r.NumPage(); i++ {
+		p := r.Page(i)
+		if p.V.IsNull() {
+			continue
+		}
+		text, err := p.GetPlainText(nil)
+		if err != nil {
+			continue
+		}
+		if text != "" {
+			buf.WriteString(text)
+			buf.WriteString("\n")
+		}
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(buf.String()), nil
 }

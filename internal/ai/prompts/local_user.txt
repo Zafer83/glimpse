@@ -19,31 +19,29 @@ Now generate a Slidev Markdown presentation about this project. Follow these rul
 4. Use short bullet points. Maximum 5 bullets per slide.
 5. Include at least one code snippet from the source above inside a fenced code block.
 6. Do NOT use mermaid code blocks. Use bullet points to describe flows.
-7. Base the story on the DOCUMENTATION section — it tells you what is important.
-8. Do NOT wrap output in a markdown code fence.
+7. Do NOT leave blank lines inside frontmatter blocks (between --- markers).
+8. Base the story on the DOCUMENTATION section.
 
-FIRST SLIDE must use this exact format:
+FIRST SLIDE must use this exact format (cover with background image):
 
 ---
 theme: '{{theme}}'
 layout: cover
 title: <project name>
+background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
 ---
 
 # <Project Name>
 
 <One-line description>
 
-<div class="absolute bottom-10">
-  <b>Code Architecture Presentation</b>
-</div>
-
 ---
 
-LAST SLIDE must use this exact format:
+LAST SLIDE must use this exact format (Thank You with background):
 
 ---
-layout: end
+layout: cover
+background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200
 ---
 
 # Vielen Dank!
@@ -52,19 +50,22 @@ Fragen? Gerne jetzt!
 
 ---
 
-Available layouts: cover, end, default, center, section, statement, fact, quote, image-right, image-left, two-cols.
-Use at least 3 different layout types.
-For two-cols use ::right:: to separate columns.
-
-Then continue with more slides separated by --- like this:
+AT LEAST 3 middle slides must use image-right or image-left:
 
 ---
+layout: image-right
+image: https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=800
+---
 
-# Next Slide Title
+# Slide Title
 
 - Point 1
 - Point 2
 
 ---
+
+Available layouts: cover, default, center, section, statement, fact, quote, image-right, image-left, two-cols, end.
+Use at least 3 different layout types.
+For two-cols use ::right:: to separate columns.
 
 BEGIN OUTPUT NOW:
