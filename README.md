@@ -4,102 +4,141 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Zafer83/glimpse)](https://golang.org/doc/devel/release.html)
 
-**Glimpse** is an AI-driven Go CLI that turns source code into professional [Slidev](https://sli.dev/) presentations.
+Glimpse is an AI-driven Go CLI that turns source code into Slidev presentations.
 
-## 🚀 Features
+## Features
 
-- Interactive CLI flow for all inputs (path, theme, model, language, output, API key)
-- OpenAI and Gemini support
-- Automatic Gemini model resolution/fallback when a requested model is unavailable
-- Slidev-ready Markdown output with architecture-focused summaries and Mermaid diagrams
-- Recursive code crawling with common folders ignored (`.git`, `node_modules`, build artifacts)
+- Interactive CLI flow (path, theme, model, language, output)
+- Theme validation and auto-install for Slidev themes
+- Multi-provider support:
+  - OpenAI (`gpt-*`)
+  - Gemini (`gemini-*`)
+  - Anthropic (`claude-*`)
+  - Local LLM (`local` / `local/<model>` / `ollama/<model>`)
+- Automatic Slidev launch option after generation
+- Progress bar with ETA while AI analysis is running
+- Recursive source crawler with common folder exclusions
 
-## 🛠️ Installation
+Terminal rendering behavior:
 
-### 1. Clone
+- Linux/macOS: colored ANSI output enabled by default
+- Windows release binaries: plain fallback mode enabled automatically
+
+## Installation
 
 ```bash
 git clone https://github.com/Zafer83/glimpse
 cd glimpse
-```
-
-### 2. Install dependencies
-
-```bash
 go mod tidy
-```
-
-### 3. Build
-
-```bash
 go build -o glimpse ./cmd/glimpse
 ```
 
-## 📖 Usage
-
-Run the binary and answer prompts:
+## Usage
 
 ```bash
 ./glimpse
 ```
 
-Or run directly with Go:
+Version:
 
 ```bash
-go run ./cmd/glimpse/main.go
+./glimpse --version
 ```
 
-The CLI asks for:
+## Versioning
 
-1. `Project Path`
-2. `Slidev Theme`
-3. `AI Model (gpt-4o or gemini-1.5-pro)`
-4. `Language`
-5. `File Name`
-6. `API Key (OpenAI/Gemini)`
+Glimpse uses `Major.Minor.Build`.
 
-### Provider selection
+- Runtime output:
+  - `./glimpse --version`
 
-- If model starts with `gemini` (or `models/gemini...`), Glimpse uses Gemini.
-- Otherwise, Glimpse uses OpenAI.
+Automatic version strategy:
 
-### Path autocompletion
+- `Major` = `0` (current project phase)
+- `Minor` = number of commits with `feat:` (or `feat(...)`)
+- `Build` = total git commit count
 
-- In a standard terminal (`Terminal`, `iTerm`, etc.), `Project Path` supports `Tab` completion.
-- In some embedded IDE terminals, line-editing is disabled automatically for stability.
+Manual override is still possible if needed:
 
-## ✅ Example models
+- `go build -ldflags "-X main.version=1.2.3" -o glimpse ./cmd/glimpse`
+
+## Release Script
+
+Build all release binaries from macOS/Linux with one command (auto version):
+
+```bash
+scripts/release.sh
+```
+
+Optional manual release version:
+
+```bash
+scripts/release.sh 1.2.3
+```
+
+This creates artifacts in a versioned folder:
+
+- `dist/v1.2.3/darwin-amd64/glimpse`
+- `dist/v1.2.3/darwin-arm64/glimpse`
+- `dist/v1.2.3/linux-amd64/glimpse`
+- `dist/v1.2.3/linux-arm64/glimpse`
+- `dist/v1.2.3/windows-amd64/glimpse.exe`
+- `dist/v1.2.3/windows-arm64/glimpse.exe`
+- `dist/v1.2.3/checksums.txt`
+
+### Model examples
 
 - OpenAI: `gpt-4o`
-- Gemini: `gemini-1.5-pro`, `gemini-2.0-flash`
+- Gemini: `gemini-2.0-flash`
+- Anthropic: `claude-3-5-sonnet-latest`
+- Local:
+  - `local` (defaults to `llama3.2`)
+  - `local/Qwen3-Coder-30B-A3B-Instruct-BF16-00001-of-00002.gguf`
 
-## 👀 View the generated slides
+### Local server URL input
 
-```bash
-npx slidev slides.md
-```
+If you choose a local model, Glimpse asks for:
 
-## 📂 Project structure
+- `Local LLM URL (e.g. http://localhost:8080)`
 
-```text
-glimpse/
-├── cmd/glimpse/       # CLI entry point
-├── internal/
-│   ├── ai/            # OpenAI/Gemini integration
-│   ├── config/        # Shared config struct
-│   └── crawler/       # File system scanning
-└── README.md
-```
+For `llama.cpp` OpenAI-compatible server, use:
 
-## 🛡️ Security & Privacy
+- `http://localhost:8080` (Glimpse uses `/v1/chat/completions`)
 
-- Glimpse scans local files and sends code content to the selected AI provider (OpenAI or Gemini).
-- Do not commit API keys.
+If needed, it can also fall back to Ollama-style `/api/chat`.
 
-## 📄 License
+## Slidev Theme Validation
 
-This project is licensed under Apache-2.0. See [LICENSE](./LICENSE).
+- `default` and `seriph` work directly.
+- For custom themes, Glimpse validates package existence on npm.
+- If valid but missing locally, Glimpse auto-installs it via:
+  - `npm install -D <theme-package>`
+- If the theme name is invalid (spelling/package), Glimpse exits with a clear error.
 
-## 🤝 Contributing
+### Official vs Community Themes
 
-Contributions and issues are welcome: [issues page](https://github.com/Zafer83/glimpse/issues).
+- Official themes can be entered as short names:
+  - `seriph`, `default`, `bricks`, `shibainu`, `apple-basic`
+- Community themes should be entered as full npm package names:
+  - Example: `@your-scope/slidev-theme-awesome`
+
+How Glimpse resolves theme input:
+
+- If you enter a short name, Glimpse maps it to `@slidev/theme-<name>`.
+- If you enter a full package name (`@scope/pkg` or `scope/pkg`), Glimpse uses it as provided.
+
+## Slidev
+
+After generating `slides.md`, Glimpse can start Slidev automatically using:
+
+- `npx --yes @slidev/cli <file>`
+
+## Author
+
+- Zafer Kılıçaslan
+
+## License
+
+Licensed under Apache-2.0. See [LICENSE](./LICENSE).
+
+All Go source files include Apache-2.0 header comments.

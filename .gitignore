@@ -14,3 +14,6 @@ slides.md
 .idea/
 go.import.xml
 *.iml
+
+.claude
+CLAUDE.md

@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@slidev/theme-seriph": "^0.25.0"
+  },
+  "devDependencies": {
+    "slidev-theme-dracula": "^0.2.0"
+  }
+}
