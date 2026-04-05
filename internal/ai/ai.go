@@ -61,7 +61,17 @@ func GenerateSlides(cfg *config.Config, content *crawler.CollectedContent) (stri
 		"code":      codeForPrompt,
 	}
 	var userPrompt string
+	var projectName string
 	if isLocalModel(cfg.Model) {
+		// For local models inject a compact "project facts" block right before
+		// BEGIN OUTPUT NOW. Small models suffer from recency bias — they forget
+		// details that appeared 50KB+ earlier in the context. The facts block
+		// is extracted from the highest-priority documentation (README first)
+		// and placed at the end of the prompt so it is fresh when generation starts.
+		var facts string
+		facts, projectName = extractProjectFacts(content.Docs)
+		promptVars["projectFacts"] = facts
+		promptVars["projectName"] = projectName
 		userPrompt = renderPrompt(localUserPromptTpl, promptVars)
 	} else {
 		userPrompt = renderPrompt(cloudUserPromptTpl, promptVars)
@@ -100,7 +110,7 @@ func GenerateSlides(cfg *config.Config, content *crawler.CollectedContent) (stri
 		return "", fmt.Errorf("failed after %d attempts: %w", DefaultRetryConfig.MaxAttempts, lastErr)
 	}
 
-	normalized := normalizeSlidevMarkdown(slides, cfg)
+	normalized := normalizeSlidevMarkdown(slides, cfg, projectName)
 
 	// Validate that the output looks like a real multi-slide presentation.
 	// If the model returned prose instead of Slidev Markdown (common with small
@@ -174,10 +184,12 @@ func maxPromptBytesForModel(model string) int {
 	lower := strings.ToLower(strings.TrimSpace(model))
 	switch {
 	case isLocalModel(lower):
-		// Local models typically have 8K-32K context windows.
-		// Instructions MUST stay visible inside the attention window.
-		// 12KB of code + ~2KB of prompt ≈ 14KB total (~3500 tokens).
-		return 12000
+		// Modern local models (Qwen 2.5, LLaMA 3.2, Mistral) typically have
+		// 32K-128K context windows. 80KB of content + ~2KB of prompt ≈ 82KB
+		// total (~20K tokens) — comfortably within the attention range of 7B+
+		// models. Rich docs/ folders often contain 100KB+ of markdown; a larger
+		// budget allows the greedy docs-fill to include several complete files.
+		return 80000
 	case strings.HasPrefix(lower, "claude"), strings.HasPrefix(lower, "anthropic/claude"):
 		return 85000
 	case strings.HasPrefix(lower, "gemini"), strings.HasPrefix(lower, "models/gemini"):
@@ -217,9 +229,11 @@ func truncateMiddleByBytes(s string, maxBytes int) string {
 }
 
 // Budget allocation weights for content tiers.
+// Documentation gets the lion's share because the presentation narrative
+// should be driven by project docs, not by code snippets.
 const (
-	docBudgetPct      = 0.60 // 60% for documentation
-	businessBudgetPct = 0.35 // 35% for business logic
+	docBudgetPct      = 0.70 // 70% for documentation
+	businessBudgetPct = 0.25 // 25% for business logic
 	supportBudgetPct  = 0.05 // 5% for support code
 )
 
@@ -233,30 +247,27 @@ func assembleContentForModel(content *crawler.CollectedContent, model string) (s
 	bizBudget := int(float64(maxBytes) * businessBudgetPct)
 	supBudget := int(float64(maxBytes) * supportBudgetPct)
 
-	// Assemble each tier.
-	docStr := assembleTier(content.Docs, "DOC", "#")
-	bizStr := assembleTier(content.Business, "CODE", "//")
-	supStr := assembleTier(content.Support, "SUPPORT", "//")
+	// Measure raw tier sizes to redistribute unused budget downward.
+	docRaw := rawTierSize(content.Docs, "DOC", "#")
+	bizRaw := rawTierSize(content.Business, "CODE", "//")
 
 	// Redistribute unused budget downward: doc → business → support.
-	docUsed := min(len(docStr), docBudget)
+	docUsed := min(docRaw, docBudget)
 	leftover := docBudget - docUsed
 	bizBudget += leftover
 
-	bizUsed := min(len(bizStr), bizBudget)
+	bizUsed := min(bizRaw, bizBudget)
 	leftover = bizBudget - bizUsed
 	supBudget += leftover
 
-	// Truncate each tier to its budget.
-	if len(docStr) > docBudget {
-		docStr = truncateMiddleByBytes(docStr, docBudget)
-	}
-	if len(bizStr) > bizBudget {
-		bizStr = truncateMiddleByBytes(bizStr, bizBudget)
-	}
-	if len(supStr) > supBudget {
-		supStr = truncateMiddleByBytes(supStr, supBudget)
-	}
+	// Docs: greedy fill — include complete high-priority files first, then fill
+	// remaining space with leading portions of subsequent files. A few complete
+	// documents are far more useful to the AI than many 500-byte crumbs.
+	docStr := assembleDocsGreedy(content.Docs, "DOC", "#", docBudget)
+	// Code tiers: proportional distribution — every file contributes a snippet
+	// so the AI sees the full breadth of the codebase.
+	bizStr := assembleTierWithBudget(content.Business, "CODE", "//", bizBudget)
+	supStr := assembleTierWithBudget(content.Support, "SUPPORT", "//", supBudget)
 
 	var b strings.Builder
 	b.WriteString("# PROJECT CONTEXT ORDER: DOCUMENTATION FIRST, THEN CORE CODE\n")
@@ -297,14 +308,151 @@ func assembleContentForModel(content *crawler.CollectedContent, model string) (s
 	return result, note
 }
 
-// assembleTier concatenates file entries into a single string with headers.
-func assembleTier(entries []crawler.FileEntry, label, commentPrefix string) string {
+// rawTierSize returns the total byte size that assembleTier would produce
+// for the given entries, without allocating the full string.
+func rawTierSize(entries []crawler.FileEntry, label, commentPrefix string) int {
 	if len(entries) == 0 {
+		return 0
+	}
+	total := 0
+	for _, e := range entries {
+		hdr := fmt.Sprintf("\n%s --- %s FILE: %s ---\n", commentPrefix, label, e.Path)
+		total += len(hdr) + len(e.Content) + 1 // +1 for trailing \n
+	}
+	return total
+}
+
+// assembleDocsGreedy fills the docs budget by including complete high-priority
+// documents first (entries are already sorted by docSortPriority). Each file
+// either fits in full or receives its leading portion (head truncation, not
+// middle truncation — the beginning of a document is always more informative
+// than the middle or end). Processing stops when the budget is exhausted.
+//
+// This strategy is much better for documentation than proportional distribution:
+// 3 complete 15KB documents give the AI far more context than 500-byte crumbs
+// from 50 documents.
+func assembleDocsGreedy(entries []crawler.FileEntry, label, commentPrefix string, budget int) string {
+	if len(entries) == 0 || budget <= 0 {
 		return ""
 	}
+
+	// Minimum bytes needed to include a file's header plus a meaningful excerpt.
+	const minUsefulBytes = 400
+
 	var b strings.Builder
+	remaining := budget
+
 	for _, e := range entries {
-		b.WriteString(fmt.Sprintf("\n%s --- %s FILE: %s ---\n%s\n", commentPrefix, label, e.Path, e.Content))
+		hdr := fmt.Sprintf("\n%s --- %s FILE: %s ---\n", commentPrefix, label, e.Path)
+		overhead := len(hdr) + 1 // +1 for trailing newline
+
+		if remaining < overhead+minUsefulBytes {
+			// Not enough budget left for a useful excerpt — stop here.
+			break
+		}
+
+		b.WriteString(hdr)
+		maxContent := remaining - overhead
+		if len(e.Content) <= maxContent {
+			// File fits in full — include it completely.
+			b.WriteString(e.Content)
+			remaining -= overhead + len(e.Content)
+		} else {
+			// File is too large for remaining budget — include leading portion.
+			// Head truncation preserves the title, summary, and key sections
+			// which are almost always at the top of a documentation file.
+			b.WriteString(e.Content[:maxContent])
+			remaining -= overhead + maxContent
+		}
+		b.WriteString("\n")
+
+		if remaining < minUsefulBytes {
+			break
+		}
+	}
+
+	return b.String()
+}
+
+// assembleTierWithBudget concatenates file entries and distributes the byte
+// budget across all files. Each file gets a fair share of the budget so that
+// no single large file crowds out the others and every file is represented
+// (albeit possibly truncated) in the final context.
+func assembleTierWithBudget(entries []crawler.FileEntry, label, commentPrefix string, budget int) string {
+	if len(entries) == 0 || budget <= 0 {
+		return ""
+	}
+
+	// Measure raw sizes (content + header overhead per file).
+	type sized struct {
+		idx     int
+		raw     int // bytes including header
+		header  string
+		content string
+	}
+	items := make([]sized, len(entries))
+	totalRaw := 0
+	for i, e := range entries {
+		hdr := fmt.Sprintf("\n%s --- %s FILE: %s ---\n", commentPrefix, label, e.Path)
+		items[i] = sized{idx: i, raw: len(hdr) + len(e.Content) + 1, header: hdr, content: e.Content}
+		totalRaw += items[i].raw
+	}
+
+	// If everything fits, no truncation needed.
+	if totalRaw <= budget {
+		var b strings.Builder
+		for _, it := range items {
+			b.WriteString(it.header)
+			b.WriteString(it.content)
+			b.WriteString("\n")
+		}
+		return b.String()
+	}
+
+	// Distribute budget proportionally across files. Each file gets at least
+	// a minimum slice (header + 200 bytes) so small files aren't starved.
+	minPerFile := 300
+	remaining := budget
+	alloc := make([]int, len(items))
+	for i, it := range items {
+		share := int(float64(budget) * float64(it.raw) / float64(totalRaw))
+		if share < minPerFile && it.raw > minPerFile {
+			share = minPerFile
+		}
+		if share > it.raw {
+			share = it.raw
+		}
+		alloc[i] = share
+		remaining -= share
+	}
+
+	// Give leftover bytes to the first files (highest priority / sorted first).
+	for i := range alloc {
+		if remaining <= 0 {
+			break
+		}
+		room := items[i].raw - alloc[i]
+		if room <= 0 {
+			continue
+		}
+		give := min(room, remaining)
+		alloc[i] += give
+		remaining -= give
+	}
+
+	var b strings.Builder
+	for i, it := range items {
+		b.WriteString(it.header)
+		maxContent := alloc[i] - len(it.header) - 1
+		if maxContent <= 0 {
+			maxContent = 0
+		}
+		if len(it.content) > maxContent && maxContent > 0 {
+			b.WriteString(truncateMiddleByBytes(it.content, maxContent))
+		} else {
+			b.WriteString(it.content)
+		}
+		b.WriteString("\n")
 	}
 	return b.String()
 }
@@ -316,18 +464,103 @@ func min(a, b int) int {
 	return b
 }
 
+// extractProjectFacts builds a compact project summary from the top documentation
+// entries. It is placed at the end of the local-model prompt (right before
+// BEGIN OUTPUT NOW) to combat recency bias in small LLMs: the model receives
+// the key project facts fresh in its context window when it starts generating.
+//
+// Returns the facts block and the detected project name (from the first # heading
+// in the highest-priority doc — usually the README).
+func extractProjectFacts(docs []crawler.FileEntry) (facts string, projectName string) {
+	if len(docs) == 0 {
+		return "", ""
+	}
+
+	const (
+		maxBytesPerDoc = 2000 // enough for title + intro + first feature list
+		maxDocs        = 3   // README + 2 more
+	)
+
+	var b strings.Builder
+	b.WriteString("KEY PROJECT FACTS (extracted from documentation — use these for your slides):\n\n")
+
+	count := 0
+	for _, e := range docs {
+		if count >= maxDocs {
+			break
+		}
+		content := e.Content
+
+		// Extract project name from the very first # heading in the first doc.
+		if projectName == "" {
+			for _, line := range strings.Split(content, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "# ") {
+					// Strip markdown formatting: *, **, emoji, badges.
+					raw := strings.TrimPrefix(trimmed, "# ")
+					raw = strings.TrimSpace(raw)
+					// Remove leading emoji/symbols (non-ASCII until first letter/digit).
+					for len(raw) > 0 {
+						r := rune(raw[0])
+						if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+							break
+						}
+						// Multi-byte rune: skip by finding next ASCII char.
+						if raw[0] > 127 {
+							i := 1
+							for i < len(raw) && raw[i] > 127 {
+								i++
+							}
+							raw = strings.TrimSpace(raw[i:])
+						} else {
+							raw = strings.TrimSpace(raw[1:])
+						}
+					}
+					if raw != "" {
+						projectName = raw
+					}
+					break
+				}
+			}
+		}
+
+		if len(content) > maxBytesPerDoc {
+			// Keep only the leading portion — title, description, key bullet points.
+			content = content[:maxBytesPerDoc]
+			// Trim to last newline so we don't cut mid-word.
+			if idx := strings.LastIndexByte(content, '\n'); idx > maxBytesPerDoc/2 {
+				content = content[:idx]
+			}
+		}
+		b.WriteString(fmt.Sprintf("[DOCUMENT: %s]\n%s\n\n", e.Path, strings.TrimSpace(content)))
+		count++
+	}
+
+	return b.String(), projectName
+}
+
 var slidevFrontmatterRe = regexp.MustCompile(`(?s)\A---\s*\n(.*?)\n---\s*\n?`)
+
+// yamlLineRe matches a YAML key-value line: "key: value" or "key:".
+var yamlLineRe = regexp.MustCompile(`^\w[\w\-]*\s*:`)
 
 // normalizeSlidevMarkdown enforces a valid global Slidev frontmatter block,
 // injects the selected theme with layout: cover, and preserves visual fields
 // (background, author) that the AI generated.
-func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
+// hintTitle is an optional project name extracted from documentation; it is
+// used when the model failed to provide a meaningful title in its output.
+func normalizeSlidevMarkdown(raw string, cfg *config.Config, hintTitle string) string {
 	md := strings.TrimSpace(raw)
 	body := md
-	title := "Code Architecture Presentation"
+	// Use the hint title as default so small models that omit the frontmatter
+	// still get the correct project name instead of the generic fallback.
+	defaultTitle := "Code Architecture Presentation"
+	if hintTitle != "" {
+		defaultTitle = hintTitle
+	}
+	title := defaultTitle
 	background := ""
 	author := ""
-	layout := "cover"
 
 	if m := slidevFrontmatterRe.FindStringSubmatch(md); len(m) == 2 {
 		fm := m[1]
@@ -353,12 +586,14 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 				if val != "" {
 					author = val
 				}
-			case "layout":
-				if val != "" {
-					layout = val
-				}
 			}
 		}
+	}
+
+	// If the LLM output a generic placeholder title, override it with the
+	// hint extracted from the documentation (the real project name).
+	if hintTitle != "" && (title == "Code Architecture Presentation" || title == defaultTitle) {
+		title = hintTitle
 	}
 
 	// Ensure cover slide always has a background image.
@@ -366,9 +601,11 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 		background = defaultCoverBackground
 	}
 
+	// The first slide is always a cover — enforce layout: cover regardless of
+	// what the model generated to guarantee the welcome page renders correctly.
 	var fmParts []string
 	fmParts = append(fmParts, "theme: "+yamlQuote(cfg.Theme))
-	fmParts = append(fmParts, "layout: "+layout)
+	fmParts = append(fmParts, "layout: cover")
 	fmParts = append(fmParts, "title: "+yamlQuote(title))
 	if author != "" {
 		fmParts = append(fmParts, "author: "+yamlQuote(author))
@@ -385,34 +622,269 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config) string {
 	// Remove any mermaid code blocks — Slidev renders them with errors.
 	body = removeMermaidBlocks(body)
 
+	// Remove [DOCUMENT: ...] lines that can leak into the output when the model
+	// echoes back the "project facts" block that was injected into the prompt.
+	body = removeDocumentTagLines(body)
+
 	// Fix malformed per-slide frontmatter: remove blank lines between --- and
 	// YAML keys so Slidev parses them correctly.
 	body = fixSlideFrontmatter(body)
 
+	// Resolve keyword-style image: values to full Unsplash URLs.
+	if cfg.UnsplashBaseURL != "" {
+		body = resolveImageKeywords(body, cfg.UnsplashBaseURL)
+	}
+
+	// Ensure the presentation ends with a Thank You outro slide.
+	body = ensureOutroSlide(body, cfg.Language)
+
 	return frontmatter + body
+}
+
+// outroHeadings are # headings that indicate a dedicated outro/thank-you slide.
+// Only heading-level matches count — phrases like "Für Fragen..." in body text
+// must not trigger a false positive.
+var outroHeadings = []string{
+	"# vielen dank", "# danke", "# danke schön",
+	"# thank you", "# thanks",
+	"# merci", "# gracias", "# grazie",
+}
+
+// ensureOutroSlide appends a Thank You cover slide if the body does not already
+// end with a dedicated outro slide (detected by heading keywords).
+func ensureOutroSlide(body, lang string) string {
+	lower := strings.ToLower(body)
+
+	// Check the LAST slide only (content after the last --- separator).
+	lastSep := strings.LastIndex(lower, "\n---")
+	lastSlide := lower
+	if lastSep >= 0 {
+		lastSlide = lower[lastSep:]
+	}
+
+	for _, kw := range outroHeadings {
+		if strings.Contains(lastSlide, kw) {
+			return body
+		}
+	}
+
+	// No dedicated outro slide found — append one.
+	outro := "\n\n---\n" +
+		"layout: cover\n" +
+		"background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200\n" +
+		"---\n\n"
+	switch strings.ToLower(lang) {
+	case "de":
+		outro += "# Vielen Dank!\n\nFragen? Gerne jetzt!\n"
+	case "fr":
+		outro += "# Merci!\n\nQuestions?\n"
+	case "es":
+		outro += "# ¡Gracias!\n\n¿Preguntas?\n"
+	case "it":
+		outro += "# Grazie!\n\nDomande?\n"
+	default:
+		outro += "# Thank You!\n\nQuestions?\n"
+	}
+	return strings.TrimRight(body, "\n") + outro
 }
 
 // defaultCoverBackground is the fallback Unsplash image for the cover slide.
 const defaultCoverBackground = "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200"
 
-// slideFrontmatterBlockRe matches per-slide frontmatter blocks: ---\n...\n---
-var slideFrontmatterBlockRe = regexp.MustCompile(`(?m)^---\s*\n((?:.*\n)*?)---\s*$`)
+// emptySlideRe matches two --- markers separated only by blank lines (empty slides).
+var emptySlideRe = regexp.MustCompile(`(?m)^---\s*\n(\s*\n)*---\s*$`)
 
-// fixSlideFrontmatter removes blank lines inside per-slide frontmatter blocks.
-// Slidev requires frontmatter to be compact: ---\nkey: value\n--- with no gaps.
+// fixSlideFrontmatter walks the body line-by-line to clean up per-slide
+// frontmatter blocks. A --- followed (after optional blanks) by a YAML key
+// starts a frontmatter block; a --- followed by non-YAML content is just a
+// slide separator.
+//
+// Fixes applied:
+//   - Removes blank lines inside frontmatter blocks.
+//   - Moves non-YAML content (bullets, prose, code) that leaked into
+//     frontmatter to the slide body after the closing ---.
+//   - Replaces unsupported layout: end with layout: cover.
+//   - Quotes YAML values starting with YAML-special characters (*, &, [, {).
+//   - Collapses consecutive --- markers (empty slides) into a single ---.
 func fixSlideFrontmatter(body string) string {
-	return slideFrontmatterBlockRe.ReplaceAllStringFunc(body, func(block string) string {
-		lines := strings.Split(block, "\n")
-		var cleaned []string
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			// Keep --- markers and non-empty lines.
-			if trimmed != "" {
-				cleaned = append(cleaned, line)
-			}
+	lines := strings.Split(body, "\n")
+	var out []string
+	i := 0
+
+	for i < len(lines) {
+		trimmed := strings.TrimSpace(lines[i])
+
+		// Not a --- marker — pass through.
+		if trimmed != "---" {
+			out = append(out, lines[i])
+			i++
+			continue
 		}
-		return strings.Join(cleaned, "\n")
-	})
+
+		// We see ---. Is this a frontmatter start or just a slide separator?
+		// Skip blank lines after --- and check the first non-blank line.
+		j := i + 1
+		for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
+			j++
+		}
+
+		// If the next non-blank line is a YAML key this is a frontmatter block.
+		if j < len(lines) && yamlLineRe.MatchString(strings.TrimSpace(lines[j])) {
+			var yamlLines []string
+			var spillLines []string
+			inSpill := false
+
+			k := i + 1 // scan from line after opening ---
+			for k < len(lines) {
+				t := strings.TrimSpace(lines[k])
+				if t == "---" {
+					break // closing --- (or next separator when inSpill)
+				}
+				if inSpill {
+					spillLines = append(spillLines, lines[k])
+				} else if yamlLineRe.MatchString(t) {
+					yamlLines = append(yamlLines, fixYAMLLine(lines[k]))
+				} else if t != "" {
+					// Non-YAML, non-blank: slide content leaked into frontmatter.
+					inSpill = true
+					spillLines = append(spillLines, lines[k])
+				}
+				// blank lines: silently dropped from frontmatter
+				k++
+			}
+
+			// Write cleaned frontmatter.
+			out = append(out, "---")
+			out = append(out, yamlLines...)
+			out = append(out, "---")
+
+			// Write any spilled content after the frontmatter.
+			for len(spillLines) > 0 && strings.TrimSpace(spillLines[len(spillLines)-1]) == "" {
+				spillLines = spillLines[:len(spillLines)-1]
+			}
+			if len(spillLines) > 0 {
+				out = append(out, "")
+				out = append(out, spillLines...)
+			}
+
+			// Advance past the closing ---.
+			if k < len(lines) && strings.TrimSpace(lines[k]) == "---" {
+				i = k + 1
+			} else {
+				i = k
+			}
+		} else {
+			// No YAML after ---: just a slide separator.
+			out = append(out, lines[i])
+			i++
+		}
+	}
+
+	// Collapse consecutive --- markers (empty slides) into one.
+	result := strings.Join(out, "\n")
+	for {
+		cleaned := emptySlideRe.ReplaceAllString(result, "---")
+		if cleaned == result {
+			break
+		}
+		result = cleaned
+	}
+	return result
+}
+
+// fixYAMLLine normalises a single YAML key-value line:
+//   - Replaces layout: end with layout: cover (end is not a valid Slidev layout).
+//   - Quotes values that start with YAML-special characters to prevent alias/
+//     anchor parse errors (e.g. a title like "*italic*" or "**bold**").
+func fixYAMLLine(line string) string {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return line
+	}
+	key := strings.TrimSpace(strings.ToLower(parts[0]))
+	rawVal := parts[1] // preserve original spacing for URL values
+
+	val := strings.TrimSpace(rawVal)
+	unquoted := strings.Trim(val, `"'`)
+
+	// Replace unsupported layout: end.
+	if key == "layout" && strings.ToLower(unquoted) == "end" {
+		return parts[0] + ": cover"
+	}
+
+	// Quote values starting with YAML-special characters that could be
+	// misinterpreted as anchors, aliases, or block scalars.
+	special := len(val) > 0 && (val[0] == '*' || val[0] == '&' || val[0] == '!' ||
+		val[0] == '[' || val[0] == '{' || val[0] == '|' || val[0] == '>')
+	alreadyQuoted := len(val) >= 2 &&
+		((val[0] == '\'' && val[len(val)-1] == '\'') ||
+			(val[0] == '"' && val[len(val)-1] == '"'))
+
+	if special && !alreadyQuoted {
+		escaped := strings.ReplaceAll(unquoted, "'", "''")
+		return parts[0] + ": '" + escaped + "'"
+	}
+	return line
+}
+
+// resolveImageKeywords replaces keyword-style image: values (not starting with
+// "http") with a real URL built from the configured template.
+// The template uses {keywords} as placeholder.
+// Only image: keys inside per-slide frontmatter blocks (between --- markers)
+// are processed; the global frontmatter background: is left untouched.
+//
+// Examples:
+//
+//	image: law,contract   → https://source.unsplash.com/1920x1080/?law,contract
+//	image: code           → https://source.unsplash.com/1920x1080/?code
+//	image: https://...    → unchanged (already a URL)
+func resolveImageKeywords(body, urlTemplate string) string {
+	if urlTemplate == "" {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	inFrontmatter := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			inFrontmatter = !inFrontmatter
+			continue
+		}
+		if !inFrontmatter {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(strings.ToLower(parts[0]))
+		if key != "image" {
+			continue
+		}
+		val := strings.TrimSpace(parts[1])
+		// Strip surrounding quotes if present.
+		val = strings.Trim(val, `"'`)
+		if strings.HasPrefix(val, "http") {
+			// Already a URL — leave it alone.
+			continue
+		}
+		if val == "" {
+			continue
+		}
+		// Build URL by replacing {keywords} with the trimmed keyword string.
+		resolved := strings.ReplaceAll(urlTemplate, "{keywords}", strings.TrimSpace(val))
+		lines[i] = parts[0] + ": " + resolved
+	}
+	return strings.Join(lines, "\n")
+}
+
+// documentTagRe matches [DOCUMENT: path] lines injected into the prompt facts
+// block that the model may echo back verbatim into the slide output.
+var documentTagRe = regexp.MustCompile(`(?m)^\[DOCUMENT:[^\]]*\]\s*\n?`)
+
+// removeDocumentTagLines strips [DOCUMENT: ...] lines from the slide body.
+func removeDocumentTagLines(body string) string {
+	return documentTagRe.ReplaceAllString(body, "")
 }
 
 // mermaidBlockRe matches ```mermaid ... ``` blocks.

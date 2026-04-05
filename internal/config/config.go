@@ -16,13 +16,19 @@ limitations under the License.
 
 package config
 
+// DefaultUnsplashBaseURL is the fallback Unsplash URL template used when
+// UNSPLASH_IMAGE_URL is not set in the environment.
+// {keywords} is replaced with comma-separated keywords chosen by the AI.
+const DefaultUnsplashBaseURL = "https://source.unsplash.com/1920x1080/?{keywords}"
+
 // Config holds runtime options collected from the interactive CLI.
 type Config struct {
-	APIKey       string
-	LocalBaseURL string
-	Theme        string
-	Model        string
-	Language     string
-	Output       string
-	ProjectPath  string
+	APIKey          string
+	LocalBaseURL    string
+	Theme           string
+	Model           string
+	Language        string
+	Output          string
+	ProjectPath     string
+	UnsplashBaseURL string
 }

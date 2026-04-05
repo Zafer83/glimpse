@@ -49,7 +49,7 @@ STEP 3 - AT LEAST 3 SLIDES MUST USE image-right OR image-left WITH AN image KEY:
 
 ---
 layout: image-right
-image: https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=800
+image: code,technology
 ---
 
 # Slide Title
@@ -58,7 +58,8 @@ Content here.
 
 ---
 
-Pick different Unsplash images that match each slide's topic (code, architecture, data, cloud, etc.).
+For `image:` fields write 1-2 descriptive English keywords (e.g. `image: architecture,cloud`), NOT full URLs.
+Pick keywords that match each slide's topic (code, architecture, data, cloud, etc.).
 
 STEP 4 - SLIDE PLAN (create one slide per topic):
 
@@ -91,7 +92,8 @@ STEP 5 - AVAILABLE SLIDEV LAYOUTS:
 - layout: two-cols — Two columns (use ::right:: separator)
 - layout: two-cols-header — Header + two columns (use ::left:: and ::right::)
 - layout: full — Full screen content
-- layout: end — Simple end page (prefer layout: cover for Thank You)
+
+NOTE: Do NOT use layout: end — it is not supported. Use layout: cover for the last slide.
 
 STEP 6 - CODE SNIPPETS:
 
@@ -107,9 +109,25 @@ CRITICAL RULES:
 - EVERY slide MUST begin with # (a top-level heading)
 - FIRST slide: layout: cover with background: <Unsplash URL>
 - LAST slide: layout: cover with background: <Unsplash URL> (Thank You outro)
-- AT LEAST 3 middle slides: layout: image-right or image-left with image: <Unsplash URL>
+- AT LEAST 3 middle slides: layout: image-right or image-left with image: <1-2 English keywords>
 - Do NOT use mermaid code blocks. Use bullet points or text diagrams instead.
 - Do NOT leave blank lines inside frontmatter blocks (between --- markers).
+- FRONTMATTER FORMAT: A slide with a layout frontmatter block MUST look like this EXACTLY:
+
+---
+layout: image-right
+image: code,technology
+---
+
+# Slide Title
+
+Content here.
+
+---
+
+  The closing --- of a frontmatter block MUST be immediately followed by a blank line and then # Heading.
+  NEVER put slide content (bullet points, text, code) inside the frontmatter block.
+  NEVER use layout: end — it does not exist. Use layout: cover for the last slide.
 - Use at least 4 different layout types across the presentation.
 - Use REAL code from the provided source, not placeholder examples.
 - Do NOT wrap output in a markdown code fence.
