@@ -58,8 +58,7 @@ func isRetryable(err error) bool {
 	}
 
 	// HTTP status codes that indicate a transient server problem.
-	var httpErr *HTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*HTTPError](err); ok {
 		switch httpErr.StatusCode {
 		case 429, 500, 502, 503, 504:
 			return true
@@ -68,8 +67,7 @@ func isRetryable(err error) bool {
 	}
 
 	// Network-level transient errors.
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
+	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
 		return true
 	}
 

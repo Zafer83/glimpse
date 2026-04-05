@@ -98,7 +98,7 @@ func TestNormalizeSlidevMarkdown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config.Config{Theme: tt.theme}
-			got := normalizeSlidevMarkdown(tt.raw, cfg)
+			got := normalizeSlidevMarkdown(tt.raw, cfg, "")
 
 			if tt.wantTheme && !strings.Contains(got, "theme: '"+tt.theme+"'") {
 				t.Errorf("expected theme %q in output:\n%s", tt.theme, got)
@@ -124,7 +124,7 @@ func TestNormalizeSlidevMarkdown(t *testing.T) {
 func TestNormalizeSlidevMarkdown_CoverLayout(t *testing.T) {
 	raw := "---\ntheme: seriph\nlayout: cover\nauthor: Zafer\ntitle: My Project\n---\n\n# My Project\n\nDescription"
 	cfg := &config.Config{Theme: "seriph"}
-	got := normalizeSlidevMarkdown(raw, cfg)
+	got := normalizeSlidevMarkdown(raw, cfg, "")
 
 	if !strings.Contains(got, "layout: cover") {
 		t.Error("expected layout: cover in output")
@@ -306,14 +306,286 @@ func TestAssembleContentForModel_DocsFirst(t *testing.T) {
 	}
 }
 
+func TestFixSlideFrontmatter_ContentSpill(t *testing.T) {
+	// Exact pattern from slides.md: bullet content leaked into frontmatter block,
+	// causing YAML alias errors like "Unresolved alias: *Backend**:".
+	input := "---\nlayout: default\ntitle: Core Components\n\n- **Backend**: Handles logic.\n- **Agents**: Perform tasks.\n- **Frontend**: User interface.\n\n---"
+	got := fixSlideFrontmatter(input)
+
+	// Frontmatter must contain only YAML — no bullet points.
+	if strings.Contains(got, "- **Backend**") {
+		// Check it's OUTSIDE the frontmatter block.
+		fmEnd := strings.Index(got, "\n---\n")
+		if fmEnd < 0 {
+			t.Fatal("expected closing --- in output")
+		}
+		bulletIdx := strings.Index(got, "- **Backend**")
+		if bulletIdx < fmEnd {
+			t.Errorf("bullet point must appear AFTER frontmatter close, got:\n%s", got)
+		}
+	} else {
+		t.Errorf("bullet content must be preserved somewhere in output:\n%s", got)
+	}
+	// YAML block must remain valid (no raw * alias starters inside ---)
+	fmEnd := strings.Index(got, "\n---\n")
+	if fmEnd < 0 {
+		t.Fatal("no frontmatter close found")
+	}
+	frontmatter := got[:fmEnd]
+	if strings.Contains(frontmatter, "**") {
+		t.Errorf("markdown bold must not appear inside frontmatter:\n%s", frontmatter)
+	}
+}
+
+func TestFixSlideFrontmatter_BlankLinesRemoved(t *testing.T) {
+	input := "---\nlayout: cover\nbackground: https://example.com/img.jpg\n\n\n---"
+	got := fixSlideFrontmatter(input)
+
+	// No blank lines inside the frontmatter block.
+	fmContent := strings.TrimPrefix(got, "---\n")
+	fmEnd := strings.Index(fmContent, "\n---")
+	if fmEnd >= 0 {
+		fmContent = fmContent[:fmEnd]
+	}
+	for _, line := range strings.Split(fmContent, "\n") {
+		if strings.TrimSpace(line) == "" {
+			t.Errorf("blank line found inside fixed frontmatter:\n%s", got)
+		}
+	}
+}
+
+func TestFixSlideFrontmatter_LayoutEndReplaced(t *testing.T) {
+	input := "---\nlayout: end\n---"
+	got := fixSlideFrontmatter(input)
+
+	if strings.Contains(got, "layout: end") {
+		t.Errorf("layout: end must be replaced:\n%s", got)
+	}
+	if !strings.Contains(got, "layout: cover") {
+		t.Errorf("layout: end must become layout: cover:\n%s", got)
+	}
+}
+
+func TestFixYAMLLine_QuotesAliasValues(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantSafe bool // must NOT contain unquoted *
+	}{
+		{"title: *italic* project", true},
+		{"title: **bold** project", true},
+		{"title: Normal Title", false},
+		{"layout: cover", false},
+		{"image: https://example.com/photo", false},
+	}
+	for _, tt := range tests {
+		got := fixYAMLLine(tt.input)
+		parts := strings.SplitN(got, ":", 2)
+		if len(parts) != 2 {
+			t.Errorf("fixYAMLLine(%q) lost colon: %q", tt.input, got)
+			continue
+		}
+		val := strings.TrimSpace(parts[1])
+		if tt.wantSafe {
+			if len(val) > 0 && val[0] == '*' {
+				t.Errorf("fixYAMLLine(%q) value still starts with *: %q", tt.input, got)
+			}
+		}
+	}
+}
+
+func TestNormalizeSlidevMarkdown_FirstSlideAlwaysCover(t *testing.T) {
+	// Even if the AI generated layout: default for the first slide,
+	// normalization must enforce layout: cover.
+	raw := "---\ntheme: seriph\nlayout: default\ntitle: My Project\n---\n\n# My Project\n\n---\n\n# Second Slide"
+	cfg := &config.Config{Theme: "seriph"}
+	got := normalizeSlidevMarkdown(raw, cfg, "")
+
+	// Find the global frontmatter and check layout.
+	lines := strings.Split(got, "\n")
+	inFirstFM := false
+	for _, line := range lines {
+		if line == "---" {
+			if !inFirstFM {
+				inFirstFM = true
+				continue
+			}
+			break // end of first frontmatter
+		}
+		if inFirstFM && strings.HasPrefix(line, "layout:") {
+			if line != "layout: cover" {
+				t.Errorf("first slide must have layout: cover, got: %q", line)
+			}
+		}
+	}
+}
+
+func TestNormalizeSlidevMarkdown_FixesRealBrokenSlides(t *testing.T) {
+	// This is the exact broken output produced by a local model.
+	// It contains the patterns that cause "Unresolved alias *Backend**:" in Slidev.
+	broken := `---
+theme: 'seriph'
+layout: cover
+title: 'LegalMind AI'
+background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
+---
+
+# LegalMind AI
+
+---
+layout: default
+title: Core Components
+
+- **Backend:** Handles business logic and data processing.
+- **Agents:** Perform specific tasks like contract analysis.
+- **Frontend:** User interface for interacting with the system.
+
+---
+
+---
+layout: image-left
+image: https://images.unsplash.com/photo-1520349876108-5e8f2d7c4a5b?auto=format&fit=crop&w=800
+
+
+---
+
+---
+
+# Code Snippet
+
+---
+layout: default
+title: Conclusion
+
+- **Impact:** Streamline legal processes, reduce human error.
+- **Future Work:** Expand functionality, improve user experience.
+
+---
+
+---
+layout: cover
+background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200
+
+
+---
+
+# Vielen Dank!
+
+Fragen? Gerne jetzt!
+`
+
+	cfg := &config.Config{Theme: "seriph"}
+	got := normalizeSlidevMarkdown(broken, cfg, "")
+
+	// 1. No bullet content inside any frontmatter block.
+	lines := strings.Split(got, "\n")
+	inFM := false
+	fmStart := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			if !inFM {
+				inFM = true
+				fmStart = i
+			} else {
+				inFM = false
+			}
+			continue
+		}
+		if inFM && strings.HasPrefix(trimmed, "- **") {
+			t.Errorf("bullet point inside frontmatter at line %d (opened at %d): %q\nfull output:\n%s",
+				i, fmStart, line, got)
+		}
+	}
+
+	// 2. No blank lines inside frontmatter blocks.
+	inFM = false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			if !inFM {
+				inFM = true
+				fmStart = i
+			} else {
+				inFM = false
+			}
+			continue
+		}
+		if inFM && trimmed == "" {
+			t.Errorf("blank line inside frontmatter at line %d (opened at %d):\nfull output:\n%s",
+				i, fmStart, got)
+		}
+	}
+
+	// 3. First slide must have layout: cover.
+	if !strings.Contains(got, "layout: cover") {
+		t.Errorf("first slide must have layout: cover:\n%s", got)
+	}
+
+	// 4. Content like "Backend:" must still appear somewhere (not lost).
+	if !strings.Contains(got, "Backend") {
+		t.Errorf("slide content must not be lost:\n%s", got)
+	}
+}
+
+func TestResolveImageKeywords(t *testing.T) {
+	const tmpl = "https://source.unsplash.com/1920x1080/?{keywords}"
+
+	tests := []struct {
+		name     string
+		body     string
+		template string
+		wantSub  string
+		noChange bool
+	}{
+		{
+			name:    "keywords replaced with URL",
+			body:    "---\nlayout: image-right\nimage: law,contract\n---\n\n# Slide",
+			template: tmpl,
+			wantSub: "image: https://source.unsplash.com/1920x1080/?law,contract",
+		},
+		{
+			name:    "single keyword replaced",
+			body:    "---\nlayout: image-left\nimage: code\n---\n\n# Slide",
+			template: tmpl,
+			wantSub: "image: https://source.unsplash.com/1920x1080/?code",
+		},
+		{
+			name:     "already-URL value unchanged",
+			body:     "---\nlayout: image-right\nimage: https://images.unsplash.com/photo-123\n---\n\n# Slide",
+			template: tmpl,
+			wantSub:  "image: https://images.unsplash.com/photo-123",
+			noChange: true,
+		},
+		{
+			name:     "empty template leaves body unchanged",
+			body:     "---\nlayout: image-right\nimage: law,contract\n---\n\n# Slide",
+			template: "",
+			wantSub:  "image: law,contract",
+			noChange: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveImageKeywords(tt.body, tt.template)
+			if !strings.Contains(got, tt.wantSub) {
+				t.Errorf("resolveImageKeywords() output does not contain %q:\n%s", tt.wantSub, got)
+			}
+			if tt.noChange && got != tt.body {
+				t.Errorf("resolveImageKeywords() should not have changed body, got:\n%s", got)
+			}
+		})
+	}
+}
+
 func TestMaxPromptBytesForModel(t *testing.T) {
 	tests := []struct {
 		model string
 		want  int
 	}{
-		{"local", 12000},
-		{"local/qwen2.5-coder:7b", 12000},
-		{"ollama/mistral", 12000},
+		{"local", 80000},
+		{"local/qwen2.5-coder:7b", 80000},
+		{"ollama/mistral", 80000},
 		{"claude-3-5-sonnet-latest", 85000},
 		{"gemini-2.0-flash", 140000},
 		{"gpt-4o", 180000},

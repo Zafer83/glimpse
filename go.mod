@@ -3,6 +3,7 @@ module github.com/Zafer83/glimpse
 go 1.26.1
 
 require (
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/lucasb-eyer/go-colorful v1.4.0
 	github.com/muesli/termenv v0.16.0
 	github.com/peterh/liner v1.2.2
@@ -13,7 +14,6 @@ require (
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.20 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

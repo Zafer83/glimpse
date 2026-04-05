@@ -539,7 +539,7 @@ func renderBanner(v string, profile termenv.Profile, startColor, endColor colorf
 	fmt.Println()
 
 	fmt.Println(ColorBlue + ColorBold + "\n        ✨ GLIMPSE ARCHITECT ✨" + ColorReset)
-	fmt.Println(ColorYellow + "                 " + shortBannerVersion(v) + ColorReset)
+	//fmt.Println(ColorYellow + "                 " + shortBannerVersion(v) + ColorReset)
 	fmt.Println(ColorCyan + "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + ColorReset)
 	fmt.Println(ColorCyan + "  Code Analysis & Slidev Generation" + ColorReset)
 	fmt.Println(ColorYellow + "  Version: " + v + ColorReset)
@@ -598,14 +598,20 @@ func promptUserConfig(line *liner.State, reader *bufio.Reader, workDir string) *
 		os.Exit(1)
 	}
 
+	unsplashURL := os.Getenv("UNSPLASH_IMAGE_URL")
+	if unsplashURL == "" {
+		unsplashURL = config.DefaultUnsplashBaseURL
+	}
+
 	return &config.Config{
-		APIKey:       apiKey,
-		LocalBaseURL: localBaseURL,
-		Theme:        theme,
-		Model:        model,
-		Language:     lang,
-		Output:       out,
-		ProjectPath:  projectPath,
+		APIKey:          apiKey,
+		LocalBaseURL:    localBaseURL,
+		Theme:           theme,
+		Model:           model,
+		Language:        lang,
+		Output:          out,
+		ProjectPath:     projectPath,
+		UnsplashBaseURL: unsplashURL,
 	}
 }
 
@@ -739,14 +745,20 @@ func configFromFlags() *config.Config {
 		os.Exit(1)
 	}
 
+	unsplashURL := os.Getenv("UNSPLASH_IMAGE_URL")
+	if unsplashURL == "" {
+		unsplashURL = config.DefaultUnsplashBaseURL
+	}
+
 	return &config.Config{
-		APIKey:       apiKey,
-		LocalBaseURL: localURL,
-		Theme:        theme,
-		Model:        model,
-		Language:     lang,
-		Output:       output,
-		ProjectPath:  *flagPath,
+		APIKey:          apiKey,
+		LocalBaseURL:    localURL,
+		Theme:           theme,
+		Model:           model,
+		Language:        lang,
+		Output:          output,
+		ProjectPath:     *flagPath,
+		UnsplashBaseURL: unsplashURL,
 	}
 }
 

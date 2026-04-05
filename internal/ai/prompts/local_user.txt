@@ -13,27 +13,28 @@ END OF SOURCE CODE.
 
 Now generate a Slidev Markdown presentation about this project. Follow these rules EXACTLY:
 
-1. Output ONLY Slidev Markdown. Do NOT describe the code. Do NOT write explanations or prose.
+1. Output ONLY Slidev Markdown. Do NOT repeat or copy the documentation. SUMMARIZE it.
 2. Write 10 to 15 slides. Separate each slide with "---" on its own line.
-3. Every slide MUST start with a "# Title" heading.
-4. Use short bullet points. Maximum 5 bullets per slide.
+3. Every slide MUST start with a "# Title" heading (single #, not ## or ###).
+4. Each slide body: 3-5 short bullet points. Each bullet MAX 10 words. Do NOT paste paragraphs.
 5. Include at least one code snippet from the source above inside a fenced code block.
 6. Do NOT use mermaid code blocks. Use bullet points to describe flows.
 7. Do NOT leave blank lines inside frontmatter blocks (between --- markers).
-8. Base the story on the DOCUMENTATION section.
+8. Do NOT copy [DOCUMENT: ...] tags or table of contents into the slides.
+9. SYNTHESIZE the key points — think: what would a presenter say about this project?
 
 FIRST SLIDE must use this exact format (cover with background image):
 
 ---
 theme: '{{theme}}'
 layout: cover
-title: <project name>
+title: {{projectName}}
 background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
 ---
 
-# <Project Name>
+# {{projectName}}
 
-<One-line description>
+<One-line description from the documentation>
 
 ---
 
@@ -54,7 +55,7 @@ AT LEAST 3 middle slides must use image-right or image-left:
 
 ---
 layout: image-right
-image: https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=800
+image: code,technology
 ---
 
 # Slide Title
@@ -64,8 +65,17 @@ image: https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&
 
 ---
 
-Available layouts: cover, default, center, section, statement, fact, quote, image-right, image-left, two-cols, end.
+For `image:` fields write 1-2 descriptive English keywords (e.g. `image: law,contract`), NOT full URLs.
+
+Available layouts: cover, default, center, section, statement, fact, quote, image-right, image-left, two-cols.
+Do NOT use layout: end — it does not exist. Use layout: cover for the last slide.
 Use at least 3 different layout types.
 For two-cols use ::right:: to separate columns.
+FRONTMATTER RULE: A slide frontmatter block (---\nkey: value\n---) MUST be immediately followed
+by a blank line and then # Heading. NEVER put bullet points or text inside the frontmatter block.
+
+REMEMBER — base your presentation on the following key facts (extracted from the project docs):
+
+{{projectFacts}}
 
 BEGIN OUTPUT NOW:

@@ -22,6 +22,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/ledongthuc/pdf"
@@ -34,7 +35,12 @@ func extractDocxText(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open docx: %w", err)
 	}
-	defer r.Close()
+	defer func(r *zip.ReadCloser) {
+		err := r.Close()
+		if err != nil {
+
+		}
+	}(r)
 
 	for _, f := range r.File {
 		if f.Name != "word/document.xml" {
@@ -44,7 +50,12 @@ func extractDocxText(path string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("open document.xml: %w", err)
 		}
-		defer rc.Close()
+		defer func(rc io.ReadCloser) {
+			err := rc.Close()
+			if err != nil {
+
+			}
+		}(rc)
 		return parseDocumentXML(rc)
 	}
 	return "", fmt.Errorf("word/document.xml not found in %s", path)
@@ -101,7 +112,12 @@ func extractPDFText(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open pdf: %w", err)
 	}
-	defer f.Close()
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+
+		}
+	}(f)
 
 	var buf bytes.Buffer
 	for i := 1; i <= r.NumPage(); i++ {

@@ -75,6 +75,88 @@ var binaryDocExtensions = map[string]bool{
 	".pdf":  true,
 }
 
+// docsDirNames are directory names whose contents are treated as documentation
+// regardless of file extension. All files within these directories receive equal
+// high priority in the documentation tier.
+var docsDirNames = map[string]bool{
+	"docs":          true,
+	"doc":           true,
+	"documentation": true,
+	"wiki":          true,
+	"pages":         true,
+}
+
+// skipMediaExtensions lists binary/media file types that cannot be read as text
+// and are skipped even when found inside a docs directory.
+var skipMediaExtensions = map[string]bool{
+	".png":   true,
+	".jpg":   true,
+	".jpeg":  true,
+	".gif":   true,
+	".svg":   true,
+	".ico":   true,
+	".webp":  true,
+	".bmp":   true,
+	".mp4":   true,
+	".mp3":   true,
+	".wav":   true,
+	".ogg":   true,
+	".zip":   true,
+	".tar":   true,
+	".gz":    true,
+	".7z":    true,
+	".exe":   true,
+	".bin":   true,
+	".dll":   true,
+	".so":    true,
+	".woff":  true,
+	".woff2": true,
+	".ttf":   true,
+	".eot":   true,
+}
+
+// codeInDocsExtensions lists source code file types that should remain in the
+// code tier even when found inside a docs directory. React/Vue components,
+// scripts, and compiled languages are code — not documentation narrative.
+var codeInDocsExtensions = map[string]bool{
+	".jsx":  true,
+	".tsx":  true,
+	".js":   true,
+	".ts":   true,
+	".py":   true,
+	".go":   true,
+	".java": true,
+	".rb":   true,
+	".php":  true,
+	".cs":   true,
+	".cpp":  true,
+	".c":    true,
+	".h":    true,
+	".rs":   true,
+	".sql":  true,
+}
+
+// isInDocsDir reports whether the given relative path lives inside a docs
+// directory (any path component matching docsDirNames).
+func isInDocsDir(relPath string) bool {
+	lower := strings.ToLower(filepath.ToSlash(relPath))
+	for _, part := range strings.Split(lower, "/") {
+		if docsDirNames[part] {
+			return true
+		}
+	}
+	return false
+}
+
+// isCodeInDocsDir returns true when a file is in a docs directory but has a
+// source code extension (e.g. .jsx, .tsx, .py). These files should be classified
+// as business/support code, not documentation, so they don't crowd out markdown
+// narrative from the docs budget.
+func isCodeInDocsDir(relPath string) bool {
+	ext := strings.ToLower(filepath.Ext(relPath))
+	return isInDocsDir(relPath) && codeInDocsExtensions[ext]
+}
+
 // skipDirs is the set of directory names to skip entirely during traversal.
 var skipDirs = map[string]bool{
 	"node_modules": true,
@@ -122,18 +204,24 @@ func expandTilde(path string) string {
 }
 
 // docSortPriority returns a sort key for documentation files.
-// README files sort first, then ARCHITECTURE/DESIGN, then everything else alphabetically.
-func docSortPriority(name string) string {
+// README files sort first, then files inside docs directories (all equally at
+// tier 1), then ARCHITECTURE/DESIGN, then everything else alphabetically.
+func docSortPriority(relPath string) string {
+	name := filepath.Base(relPath)
 	lower := strings.ToLower(name)
 	switch {
 	case strings.HasPrefix(lower, "readme"):
 		return "0_" + lower
+	case isInDocsDir(relPath):
+		// All files inside a docs directory share tier 1 so they are equally
+		// prioritized — sorted only alphabetically among themselves.
+		return "1_" + strings.ToLower(filepath.ToSlash(relPath))
 	case strings.HasPrefix(lower, "architecture") || strings.HasPrefix(lower, "design") || strings.HasPrefix(lower, "overview"):
-		return "1_" + lower
-	case strings.HasPrefix(lower, "contributing") || strings.HasPrefix(lower, "changelog"):
 		return "2_" + lower
-	default:
+	case strings.HasPrefix(lower, "contributing") || strings.HasPrefix(lower, "changelog"):
 		return "3_" + lower
+	default:
+		return "4_" + lower
 	}
 }
 
@@ -171,7 +259,7 @@ func CollectProject(root string) (*CollectedContent, error) {
 		ext := strings.ToLower(filepath.Ext(path))
 		relPath, _ := filepath.Rel(absPath, path)
 
-		// Binary document formats (docx, pdf).
+		// Binary document formats (docx, pdf) are always docs regardless of location.
 		if binaryDocExtensions[ext] {
 			text, extractErr := extractBinaryDoc(path, ext)
 			if extractErr != nil {
@@ -188,7 +276,27 @@ func CollectProject(root string) (*CollectedContent, error) {
 			return nil
 		}
 
-		// Plain-text documentation.
+		// Files inside a docs directory are treated as documentation regardless of
+		// extension. Binary/media files (images, archives, fonts) are skipped.
+		// Source code files (.jsx, .tsx, .py, etc.) stay in the code tier even
+		// when inside docs/ — they are interactive components, not narrative text.
+		if isInDocsDir(relPath) && !skipMediaExtensions[ext] && !isCodeInDocsDir(relPath) {
+			content, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil
+			}
+			text := string(content)
+			if strings.TrimSpace(text) != "" {
+				result.Docs = append(result.Docs, FileEntry{
+					Path:     relPath,
+					Content:  text,
+					Category: CategoryDoc,
+				})
+			}
+			return nil
+		}
+
+		// Plain-text documentation (outside docs directories).
 		if docExtensions[ext] {
 			content, readErr := os.ReadFile(path)
 			if readErr != nil {
@@ -235,10 +343,18 @@ func CollectProject(root string) (*CollectedContent, error) {
 		fmt.Printf("  ⚠ %s\n", w)
 	}
 
-	// Sort docs: README first, then architecture docs, then alphabetically.
+	// Sort docs: README first, then docs-directory files, then architecture docs,
+	// then everything else. Within each priority tier, sort by descending content
+	// size so the most comprehensive documents are included first when the AI
+	// context budget runs out (greedy fill picks top files).
 	sort.Slice(result.Docs, func(i, j int) bool {
-		return docSortPriority(filepath.Base(result.Docs[i].Path)) <
-			docSortPriority(filepath.Base(result.Docs[j].Path))
+		pi := docSortPriority(result.Docs[i].Path)
+		pj := docSortPriority(result.Docs[j].Path)
+		if pi != pj {
+			return pi < pj
+		}
+		// Same priority tier: larger files first (more content = more comprehensive).
+		return len(result.Docs[i].Content) > len(result.Docs[j].Content)
 	})
 	sort.Slice(result.Business, func(i, j int) bool {
 		return result.Business[i].Path < result.Business[j].Path
