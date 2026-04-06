@@ -1,6 +1,4 @@
-<a href="https://github.com/Zafer83/glimpse">
-  <img src="https://raw.githubusercontent.com/Zafer83/glimpse/main/glimpse.png" alt="Glimpse Logo" width="300">
-</a>
+[![Glimpse Logo](https://raw.githubusercontent.com/Zafer83/glimpse/main/glimpse.png)](https://github.com/Zafer83/glimpse)
 
 # Glimpse ✨
 
