@@ -28,7 +28,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
+
 	"strings"
 	"syscall"
 	"time"
@@ -172,29 +172,24 @@ func gitOutput(args ...string) (string, error) {
 }
 
 func autoVersionFromGit() (string, bool) {
-	buildRaw, err := gitOutput("rev-list", "--count", "HEAD")
+	// Use the latest semver git tag as the version source-of-truth.
+	// "git describe --tags --match v*" returns e.g. "v0.9.1" or "v0.9.1-3-gabcdef".
+	desc, err := gitOutput("describe", "--tags", "--match", "v[0-9]*")
 	if err != nil {
 		return "", false
 	}
-	featRaw, err := gitOutput("log", "--pretty=%s")
-	if err != nil {
-		return "", false
+	desc = strings.TrimPrefix(desc, "v")
+	if v, ok := normalizeTripletVersion(desc); ok {
+		return v, true
 	}
-
-	build, err := strconv.Atoi(buildRaw)
-	if err != nil {
-		return "", false
-	}
-
-	featCount := 0
-	for _, line := range strings.Split(featRaw, "\n") {
-		msg := strings.TrimSpace(strings.ToLower(line))
-		if strings.HasPrefix(msg, "feat:") || strings.HasPrefix(msg, "feat(") {
-			featCount++
+	// If describe returned something like "0.9.1-3-gabcdef" (commits after tag),
+	// extract just the base version.
+	if parts := strings.SplitN(desc, "-", 2); len(parts) >= 1 {
+		if v, ok := normalizeTripletVersion(parts[0]); ok {
+			return v + "-dev", true
 		}
 	}
-
-	return fmt.Sprintf("0.%d.%d", featCount, build), true
+	return "", false
 }
 
 // --- User input ---
@@ -492,11 +487,10 @@ func startFancyLoader(message string, profile termenv.Profile, startColor, endCo
 				gradColor := startColor.BlendLuv(endColor, ratio).Hex()
 				finalBar.WriteString(termenv.String("█").Foreground(profile.Color(gradColor)).String())
 			}
-			fmt.Printf("\r\033[2K%sProgress%s [%s] 100.0%% | ETA 0s | %s\n", ColorBlue, ColorReset, finalBar.String(), doneText)
+			fmt.Printf("\r\033[2K%sProgress%s [%s] 100.0%% | %s%s%s\n", ColorBlue, ColorReset, finalBar.String(), ColorGreen, doneText, ColorReset)
 		} else {
-			fmt.Printf("\rProgress: 100.0%% | ETA 0s | %s\n", doneText)
+			fmt.Printf("\rProgress: 100.0%% | %s%s%s\n", ColorGreen, doneText, ColorReset)
 		}
-		fmt.Printf("%s%s%s\n", ColorGreen, doneText, ColorReset)
 	}
 }
 
@@ -656,14 +650,13 @@ func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, en
 			totalDocBytes += len(d.Content)
 		}
 		if totalDocBytes > 50000 {
-			fmt.Printf("%s  💡 Tip: This project has %dKB of documentation. For richer presentations, try:%s\n",
+			fmt.Printf("%s  💡 Tip: This project has %dKB of docs — a cloud model produces richer slides.%s\n",
 				ColorYellow, totalDocBytes/1000, ColorReset)
-			fmt.Printf("%s       glimpse -model gemini-2.0-flash    (free tier available)%s\n", ColorYellow, ColorReset)
-			fmt.Printf("%s       glimpse -model claude-3-5-sonnet-latest%s\n", ColorYellow, ColorReset)
+			fmt.Printf("%s       glimpse -model gemini-2.0-flash    (requires GOOGLE_API_KEY)%s\n", ColorYellow, ColorReset)
+			fmt.Printf("%s       glimpse -model claude-3-5-sonnet   (requires ANTHROPIC_API_KEY)%s\n", ColorYellow, ColorReset)
 		}
 	}
 
-	fmt.Printf("%s🧠 AI is analyzing code...%s\n", ColorMagenta, ColorReset)
 	stopLoader := startFancyLoader("🧠 AI is analyzing code...", profile, startColor, endColor)
 	slides, err := ai.GenerateSlides(cfg, content)
 	if err != nil {

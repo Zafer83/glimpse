@@ -27,9 +27,6 @@ go.sum
 .DS_Store
 Thumbs.db
 
-# Local auto-version counter
-.version/
-
 # Build output
 /dist/
 
