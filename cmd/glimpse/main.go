@@ -649,6 +649,20 @@ func scanAndGenerate(cfg *config.Config, profile termenv.Profile, startColor, en
 	fmt.Printf("%s  📄 %d docs, 💼 %d business logic, 🔧 %d support files%s\n",
 		ColorGray, docs, biz, sup, ColorReset)
 
+	// Hint: large docs projects benefit from cloud models with stronger summarization.
+	if ai.IsLocalModel(cfg.Model) && docs > 20 {
+		totalDocBytes := 0
+		for _, d := range content.Docs {
+			totalDocBytes += len(d.Content)
+		}
+		if totalDocBytes > 50000 {
+			fmt.Printf("%s  💡 Tip: This project has %dKB of documentation. For richer presentations, try:%s\n",
+				ColorYellow, totalDocBytes/1000, ColorReset)
+			fmt.Printf("%s       glimpse -model gemini-2.0-flash    (free tier available)%s\n", ColorYellow, ColorReset)
+			fmt.Printf("%s       glimpse -model claude-3-5-sonnet-latest%s\n", ColorYellow, ColorReset)
+		}
+	}
+
 	fmt.Printf("%s🧠 AI is analyzing code...%s\n", ColorMagenta, ColorReset)
 	stopLoader := startFancyLoader("🧠 AI is analyzing code...", profile, startColor, endColor)
 	slides, err := ai.GenerateSlides(cfg, content)

@@ -55,25 +55,34 @@ func GenerateSlides(cfg *config.Config, content *crawler.CollectedContent) (stri
 		"language": cfg.Language,
 	})
 
+	// Extract a structured outline from the project docs. This drives the
+	// dynamic slide plan: project-specific topics instead of generic placeholders.
+	outline := extractDocOutline(content.Docs)
+	var projectName string
+	projectName = outline.ProjectName
+	if projectName == "" {
+		projectName = "Project"
+	}
+	projectDesc := outline.Description
+	if projectDesc == "" {
+		projectDesc = "A software project"
+	}
+
 	promptVars := map[string]string{
 		"theme":     cfg.Theme,
 		"truncNote": truncNote,
 		"code":      codeForPrompt,
 	}
 	var userPrompt string
-	var projectName string
 	if isLocalModel(cfg.Model) {
-		// For local models inject a compact "project facts" block right before
-		// BEGIN OUTPUT NOW. Small models suffer from recency bias — they forget
-		// details that appeared 50KB+ earlier in the context. The facts block
-		// is extracted from the highest-priority documentation (README first)
-		// and placed at the end of the prompt so it is fresh when generation starts.
-		var facts string
-		facts, projectName = extractProjectFacts(content.Docs)
-		promptVars["projectFacts"] = facts
+		slidePlan := buildSlidePlan(outline, cfg.Language, true)
+		promptVars["slidePlan"] = slidePlan
 		promptVars["projectName"] = projectName
+		promptVars["projectDescription"] = projectDesc
 		userPrompt = renderPrompt(localUserPromptTpl, promptVars)
 	} else {
+		slidePlan := buildSlidePlan(outline, cfg.Language, false)
+		promptVars["slidePlan"] = slidePlan
 		userPrompt = renderPrompt(cloudUserPromptTpl, promptVars)
 	}
 
@@ -145,6 +154,11 @@ func validateSlidevOutput(md string) error {
 // RequiresAPIKey returns true if the model needs a remote API key.
 func RequiresAPIKey(model string) bool {
 	return !isLocalModel(model)
+}
+
+// IsLocalModel is the exported version of isLocalModel for use by cmd/.
+func IsLocalModel(model string) bool {
+	return isLocalModel(model)
 }
 
 // --- Model detection helpers ---
@@ -242,6 +256,7 @@ const (
 // Unused budget from one tier flows to the next.
 func assembleContentForModel(content *crawler.CollectedContent, model string) (string, string) {
 	maxBytes := maxPromptBytesForModel(model)
+	local := isLocalModel(model)
 
 	docBudget := int(float64(maxBytes) * docBudgetPct)
 	bizBudget := int(float64(maxBytes) * businessBudgetPct)
@@ -260,10 +275,11 @@ func assembleContentForModel(content *crawler.CollectedContent, model string) (s
 	leftover = bizBudget - bizUsed
 	supBudget += leftover
 
-	// Docs: greedy fill — include complete high-priority files first, then fill
-	// remaining space with leading portions of subsequent files. A few complete
-	// documents are far more useful to the AI than many 500-byte crumbs.
-	docStr := assembleDocsGreedy(content.Docs, "DOC", "#", docBudget)
+	// Docs: greedy fill with compaction for local models. Local models get
+	// compacted docs (headings + bullets + tables + first sentences) so they
+	// see dense, presentation-ready content. Cloud models get full docs since
+	// they have the reasoning capacity to summarize on their own.
+	docStr := assembleDocsGreedy(content.Docs, "DOC", "#", docBudget, local)
 	// Code tiers: proportional distribution — every file contributes a snippet
 	// so the AI sees the full breadth of the codebase.
 	bizStr := assembleTierWithBudget(content.Business, "CODE", "//", bizBudget)
@@ -322,16 +338,131 @@ func rawTierSize(entries []crawler.FileEntry, label, commentPrefix string) int {
 	return total
 }
 
-// assembleDocsGreedy fills the docs budget by including complete high-priority
-// documents first (entries are already sorted by docSortPriority). Each file
-// either fits in full or receives its leading portion (head truncation, not
-// middle truncation — the beginning of a document is always more informative
-// than the middle or end). Processing stops when the budget is exhausted.
+// compactDocContent extracts only structurally meaningful elements from a
+// documentation file, discarding verbose prose paragraphs that small LLMs
+// tend to copy verbatim. The result is a much denser representation that
+// preserves headings, bullet points, tables, and first sentences of paragraphs
+// while being 3-5× smaller than the raw content.
 //
-// This strategy is much better for documentation than proportional distribution:
-// 3 complete 15KB documents give the AI far more context than 500-byte crumbs
-// from 50 documents.
-func assembleDocsGreedy(entries []crawler.FileEntry, label, commentPrefix string, budget int) string {
+// What is kept:
+//   - All headings (#, ##, ###, etc.)
+//   - All bullet point / list items (-, *, numbered)
+//   - All table rows (lines with |)
+//   - Block quote lines (>)
+//   - Code block opening lines (first 3 lines only, rest replaced with ...)
+//   - First sentence of each prose paragraph (non-structural text)
+//   - Blank lines between sections (for readability)
+//
+// What is discarded:
+//   - 2nd+ sentences of prose paragraphs
+//   - Large code blocks (beyond 3 lines)
+//   - Table-of-contents link lists
+func compactDocContent(content string) string {
+	lines := strings.Split(content, "\n")
+	var out []string
+	inCodeBlock := false
+	codeBlockLines := 0
+	inProseParagraph := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Code block toggle.
+		if strings.HasPrefix(trimmed, "```") {
+			if !inCodeBlock {
+				inCodeBlock = true
+				codeBlockLines = 0
+				out = append(out, line)
+			} else {
+				inCodeBlock = false
+				out = append(out, line)
+			}
+			inProseParagraph = false
+			continue
+		}
+
+		// Inside code block: keep first 3 lines, then add "..." and skip.
+		if inCodeBlock {
+			codeBlockLines++
+			if codeBlockLines <= 3 {
+				out = append(out, line)
+			} else if codeBlockLines == 4 {
+				out = append(out, "  ...")
+			}
+			continue
+		}
+
+		// Blank line: keep it as section separator, reset prose state.
+		if trimmed == "" {
+			inProseParagraph = false
+			out = append(out, "")
+			continue
+		}
+
+		// Headings: always keep.
+		if strings.HasPrefix(trimmed, "#") {
+			inProseParagraph = false
+			out = append(out, line)
+			continue
+		}
+
+		// Horizontal rules / separators: keep.
+		if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+			inProseParagraph = false
+			out = append(out, line)
+			continue
+		}
+
+		// Bullet points / list items: always keep.
+		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") ||
+			strings.HasPrefix(trimmed, "+ ") || (len(trimmed) > 2 && trimmed[0] >= '0' && trimmed[0] <= '9' && strings.Contains(trimmed[:3], ".")) {
+			inProseParagraph = false
+			out = append(out, line)
+			continue
+		}
+
+		// Table rows: always keep.
+		if strings.HasPrefix(trimmed, "|") || (strings.Contains(trimmed, "|") && strings.Contains(trimmed, "---")) {
+			inProseParagraph = false
+			out = append(out, line)
+			continue
+		}
+
+		// Block quotes: always keep.
+		if strings.HasPrefix(trimmed, ">") {
+			inProseParagraph = false
+			out = append(out, line)
+			continue
+		}
+
+		// Skip TOC-style links: lines that are only [text](#anchor).
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, ")") && strings.Contains(trimmed, "](#") {
+			continue
+		}
+
+		// Prose paragraph: keep only the first sentence (first line).
+		if !inProseParagraph {
+			inProseParagraph = true
+			// Extract first sentence: up to first ". " or end of line.
+			if idx := strings.Index(trimmed, ". "); idx > 0 && idx < 200 {
+				out = append(out, trimmed[:idx+1])
+			} else {
+				out = append(out, trimmed)
+			}
+		}
+		// Subsequent lines of prose paragraph: skip.
+	}
+
+	return strings.Join(out, "\n")
+}
+
+// assembleDocsGreedy fills the docs budget by including compacted high-priority
+// documents first (entries are already sorted by docSortPriority). Each file's
+// content is pre-processed by compactDocContent to extract only structural
+// elements (headings, bullets, tables, first sentences). This dramatically
+// reduces the byte footprint so MORE files fit in the budget, AND the model
+// receives dense, presentation-ready content instead of verbose prose.
+func assembleDocsGreedy(entries []crawler.FileEntry, label, commentPrefix string, budget int, compact bool) string {
 	if len(entries) == 0 || budget <= 0 {
 		return ""
 	}
@@ -347,21 +478,21 @@ func assembleDocsGreedy(entries []crawler.FileEntry, label, commentPrefix string
 		overhead := len(hdr) + 1 // +1 for trailing newline
 
 		if remaining < overhead+minUsefulBytes {
-			// Not enough budget left for a useful excerpt — stop here.
 			break
+		}
+
+		content := e.Content
+		if compact {
+			content = compactDocContent(content)
 		}
 
 		b.WriteString(hdr)
 		maxContent := remaining - overhead
-		if len(e.Content) <= maxContent {
-			// File fits in full — include it completely.
-			b.WriteString(e.Content)
-			remaining -= overhead + len(e.Content)
+		if len(content) <= maxContent {
+			b.WriteString(content)
+			remaining -= overhead + len(content)
 		} else {
-			// File is too large for remaining budget — include leading portion.
-			// Head truncation preserves the title, summary, and key sections
-			// which are almost always at the top of a documentation file.
-			b.WriteString(e.Content[:maxContent])
+			b.WriteString(content[:maxContent])
 			remaining -= overhead + maxContent
 		}
 		b.WriteString("\n")
@@ -616,6 +747,11 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config, hintTitle string) s
 	if body == "" {
 		body = "# Presentation\n"
 	}
+	// Promote ## headings to # when they appear as the first heading after a
+	// slide separator. Small models often output ## instead of # for slide titles,
+	// which makes Slidev render them as body text instead of slide headings.
+	body = promoteSlideHeadings(body)
+
 	body = ensureTitleSlide(body, title)
 	body = ensureSlideBreakPerTopLevelHeading(body)
 
@@ -630,10 +766,10 @@ func normalizeSlidevMarkdown(raw string, cfg *config.Config, hintTitle string) s
 	// YAML keys so Slidev parses them correctly.
 	body = fixSlideFrontmatter(body)
 
-	// Resolve keyword-style image: values to full Unsplash URLs.
-	if cfg.UnsplashBaseURL != "" {
-		body = resolveImageKeywords(body, cfg.UnsplashBaseURL)
-	}
+	// Resolve keyword-style image: values to proper Unsplash CDN URLs.
+	// Uses curated photo IDs with layout-aware crops (landscape for covers,
+	// portrait for image-right/left).
+	body = resolveAllImageKeywords(body)
 
 	// Ensure the presentation ends with a Thank You outro slide.
 	body = ensureOutroSlide(body, cfg.Language)
@@ -671,7 +807,7 @@ func ensureOutroSlide(body, lang string) string {
 	// No dedicated outro slide found — append one.
 	outro := "\n\n---\n" +
 		"layout: cover\n" +
-		"background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200\n" +
+		"background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1600&h=900&q=80\n" +
 		"---\n\n"
 	switch strings.ToLower(lang) {
 	case "de":
@@ -689,7 +825,8 @@ func ensureOutroSlide(body, lang string) string {
 }
 
 // defaultCoverBackground is the fallback Unsplash image for the cover slide.
-const defaultCoverBackground = "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200"
+// Uses landscape crop with dark code aesthetic for good text readability.
+const defaultCoverBackground = "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1600&h=900&q=80"
 
 // emptySlideRe matches two --- markers separated only by blank lines (empty slides).
 var emptySlideRe = regexp.MustCompile(`(?m)^---\s*\n(\s*\n)*---\s*$`)
@@ -899,6 +1036,63 @@ func removeMermaidBlocks(body string) string {
 func yamlQuote(v string) string {
 	escaped := strings.ReplaceAll(strings.TrimSpace(v), "'", "''")
 	return "'" + escaped + "'"
+}
+
+// promoteSlideHeadings converts ## headings to # when they are the first
+// heading after a slide separator (--- or start of body). Small local models
+// often output ## for slide titles, but Slidev needs # for the main heading
+// per slide to render correctly.
+func promoteSlideHeadings(body string) string {
+	lines := strings.Split(body, "\n")
+	var out []string
+	inFence := false
+	expectHeading := true // true at start and after ---
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			out = append(out, line)
+			continue
+		}
+
+		if inFence {
+			out = append(out, line)
+			continue
+		}
+
+		if trimmed == "---" {
+			expectHeading = true
+			out = append(out, line)
+			continue
+		}
+
+		// Skip blank lines — don't reset expectHeading.
+		if trimmed == "" {
+			out = append(out, line)
+			continue
+		}
+
+		// YAML-like line in frontmatter — skip, don't reset.
+		if expectHeading && yamlLineRe.MatchString(trimmed) {
+			out = append(out, line)
+			continue
+		}
+
+		// First content line after --- (or start): if it's ##+ promote to #.
+		if expectHeading && strings.HasPrefix(trimmed, "## ") {
+			// Promote: remove one # level.
+			out = append(out, "#"+strings.TrimPrefix(trimmed, "##"))
+			expectHeading = false
+			continue
+		}
+
+		expectHeading = false
+		out = append(out, line)
+	}
+
+	return strings.Join(out, "\n")
 }
 
 func ensureTitleSlide(body, title string) string {
