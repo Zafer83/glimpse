@@ -1,42 +1,40 @@
-Read the project documentation and source code below. Then generate a Slidev Markdown presentation.
+Read the project documentation and source code below. Generate a PROFESSIONAL Slidev Markdown presentation.
 
-IMPORTANT: The content is organized in three sections:
-1. PROJECT DOCUMENTATION — Use this to understand the project's purpose, goals, and architecture. This drives the presentation narrative.
-2. CORE BUSINESS LOGIC — The most important source code. Select interesting patterns, architectures, and algorithms for code slides.
-3. SUPPORTING CODE — Tests, configs, utilities. Use only for additional context, do not feature prominently.
+IMPORTANT: The content is organized in three priority sections:
+1. PROJECT DOCUMENTATION — Drives the presentation narrative. Extract key facts, numbers, and themes.
+2. CORE BUSINESS LOGIC — Select interesting code patterns for technical slides.
+3. SUPPORTING CODE — Background context only, do not feature prominently.
 
 Base the presentation STORY on the documentation. Use code only to illustrate key technical points.
 
-YOU MUST produce between 10 and 15 slides. Each slide MUST be separated by --- on its own line.
-Every slide MUST start with a # heading. Do NOT put all content on one slide.
+{{truncNote}}
+PROJECT SOURCE:
+{{code}}
 
-STEP 1 - FIRST SLIDE MUST USE THIS EXACT FORMAT (cover with background):
+END OF SOURCE CODE.
 
+PRESENTATION REQUIREMENTS:
+
+1. SLIDE COUNT: Generate 15-20 slides total.
+
+2. FIRST SLIDE (cover with background):
 ---
 theme: '{{theme}}'
 layout: cover
 title: '<your chosen title>'
-background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200
+background: https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1600&h=900&q=80
 ---
 
 # <Project Title>
 
 <One-line description of the project>
 
-<div class="absolute bottom-10">
-  <b>Code Architecture Presentation</b>
-</div>
-
 ---
 
-Pick a background URL from Unsplash that matches the project topic.
-Format: https://images.unsplash.com/photo-<ID>?auto=format&fit=crop&w=1200
-
-STEP 2 - LAST SLIDE MUST USE THIS EXACT FORMAT (Thank You outro with background):
-
+3. LAST SLIDE (outro with background):
 ---
 layout: cover
-background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1200
+background: https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&w=1600&h=900&q=80
 ---
 
 # Thank You
@@ -45,94 +43,55 @@ Questions? Feedback?
 
 ---
 
-STEP 3 - AT LEAST 3 SLIDES MUST USE image-right OR image-left WITH AN image KEY:
+4. SECTION DIVIDERS — Use `layout: section` slides between major topics.
+   These slides contain ONLY a # heading — no bullets, no content, no images.
+   This creates visual rhythm and breathing room in the presentation.
 
+Example:
+---
+layout: section
+---
+
+# Architecture
+
+---
+
+5. IMAGE SLIDES — At least 3 slides with `layout: image-right` or `image-left`.
+   For `image:` fields write 1-2 descriptive English keywords (e.g. `image: cloud,server`), NOT full URLs.
+
+Example:
 ---
 layout: image-right
-image: code,technology
+image: architecture,cloud
 ---
 
-# Slide Title
+# System Architecture
 
-Content here.
-
----
-
-For `image:` fields write 1-2 descriptive English keywords (e.g. `image: architecture,cloud`), NOT full URLs.
-Pick keywords that match each slide's topic (code, architecture, data, cloud, etc.).
-
-STEP 4 - SLIDE PLAN (create one slide per topic):
-
-1. Cover slide (layout: cover + background) - project name, one-line description
-2. Project Overview (layout: default) - what the project does, key features (from documentation)
-3. Problem & Motivation (layout: image-right + image) - what problem does it solve
-4. Tech Stack (layout: two-cols) - languages, frameworks, dependencies
-5. Architecture (layout: image-left + image) - high-level component overview
-6. Core Module 1 (layout: default) - explain the most important module with a code snippet
-7. Core Module 2 (layout: image-right + image) - explain another key module
-8. Data/Control Flow (layout: default) - describe how components interact with bullet points
-9. API/Interface Design (layout: default) - how users or other systems interact
-10. Key Design Decisions (layout: statement) - important architectural choices
-11-14. Additional topics from documentation and source code
-LAST. Thank You (layout: cover + background)
-
-STEP 5 - AVAILABLE SLIDEV LAYOUTS:
-
-- layout: cover — Cover page (use with background: URL)
-- layout: default — Standard content slide
-- layout: center — Content centered on screen
-- layout: intro — Introduction with title, description, author
-- layout: section — Section divider between topics
-- layout: statement — Bold statement/affirmation
-- layout: fact — Prominent fact or data point
-- layout: quote — Quotation with prominence
-- layout: image-right — Image right, content left (use with image: URL)
-- layout: image-left — Image left, content right (use with image: URL)
-- layout: image — Full-screen image (use with image: URL)
-- layout: two-cols — Two columns (use ::right:: separator)
-- layout: two-cols-header — Header + two columns (use ::left:: and ::right::)
-- layout: full — Full screen content
-
-NOTE: Do NOT use layout: end — it is not supported. Use layout: cover for the last slide.
-
-STEP 6 - CODE SNIPPETS:
-
-```go
-// actual code from the project, not placeholders
-func main() {
-    fmt.Println("Hello")
-}
-```
-
-CRITICAL RULES:
-- Output MUST contain at least 10 occurrences of --- (slide separators)
-- EVERY slide MUST begin with # (a top-level heading)
-- FIRST slide: layout: cover with background: <Unsplash URL>
-- LAST slide: layout: cover with background: <Unsplash URL> (Thank You outro)
-- AT LEAST 3 middle slides: layout: image-right or image-left with image: <1-2 English keywords>
-- Do NOT use mermaid code blocks. Use bullet points or text diagrams instead.
-- Do NOT leave blank lines inside frontmatter blocks (between --- markers).
-- FRONTMATTER FORMAT: A slide with a layout frontmatter block MUST look like this EXACTLY:
-
----
-layout: image-right
-image: code,technology
----
-
-# Slide Title
-
-Content here.
+- Microservice-based backend
+- Event-driven communication
+- Auto-scaling infrastructure
 
 ---
 
-  The closing --- of a frontmatter block MUST be immediately followed by a blank line and then # Heading.
-  NEVER put slide content (bullet points, text, code) inside the frontmatter block.
-  NEVER use layout: end — it does not exist. Use layout: cover for the last slide.
-- Use at least 4 different layout types across the presentation.
-- Use REAL code from the provided source, not placeholder examples.
-- Do NOT wrap output in a markdown code fence.
-- PRIORITIZE documentation content for the narrative.
-- For two-cols layout, use ::right:: to separate columns.
-{{truncNote}}
-PROJECT SOURCE:
-{{code}}
+6. LAYOUT VARIETY — Use at least 5 different layout types across the presentation:
+   cover, default, section, image-right, image-left, two-cols, fact, statement, quote
+
+7. CONTENT QUALITY:
+   - Use SPECIFIC numbers and statistics from the documentation (percentages, prices, metrics).
+   - Each bullet: max 10 words. Each slide: max 5 bullets.
+   - Include 2-3 real code snippets from the provided source code.
+   - Use markdown tables for comparisons where appropriate.
+   - NEVER copy documentation verbatim — synthesize and rephrase.
+
+8. FORMAT RULES:
+   - Every slide MUST start with # (top-level heading, NOT ## or ###).
+   - No blank lines inside frontmatter blocks (between --- markers).
+   - No mermaid code blocks (Slidev cannot render them reliably).
+   - FRONTMATTER: only key: value pairs between --- markers. NO bullets or prose.
+   - For two-cols layout: use ::right:: to separate columns.
+   - Do NOT use layout: end — it does not exist. Use layout: cover for the last slide.
+   - Do NOT wrap output in a markdown code fence.
+
+{{slidePlan}}
+
+OUTPUT ONLY SLIDEV MARKDOWN — no explanations, no commentary, no wrapper fences.
