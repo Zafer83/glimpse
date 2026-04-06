@@ -20,9 +20,6 @@ go.import.xml
 go.imports.xml
 .vscode/
 
-# Go
-go.sum
-
 # OS artifacts
 .DS_Store
 Thumbs.db
@@ -33,3 +30,4 @@ Thumbs.db
 # Claude Code
 .claude/
 CLAUDE.md
+.cache

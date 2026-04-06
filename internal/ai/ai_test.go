@@ -538,16 +538,16 @@ func TestResolveImageKeywords(t *testing.T) {
 		noChange bool
 	}{
 		{
-			name:    "keywords replaced with URL",
-			body:    "---\nlayout: image-right\nimage: law,contract\n---\n\n# Slide",
+			name:     "keywords replaced with URL",
+			body:     "---\nlayout: image-right\nimage: law,contract\n---\n\n# Slide",
 			template: tmpl,
-			wantSub: "image: https://source.unsplash.com/1920x1080/?law,contract",
+			wantSub:  "image: https://source.unsplash.com/1920x1080/?law,contract",
 		},
 		{
-			name:    "single keyword replaced",
-			body:    "---\nlayout: image-left\nimage: code\n---\n\n# Slide",
+			name:     "single keyword replaced",
+			body:     "---\nlayout: image-left\nimage: code\n---\n\n# Slide",
 			template: tmpl,
-			wantSub: "image: https://source.unsplash.com/1920x1080/?code",
+			wantSub:  "image: https://source.unsplash.com/1920x1080/?code",
 		},
 		{
 			name:     "already-URL value unchanged",

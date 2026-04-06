@@ -609,7 +609,7 @@ func extractProjectFacts(docs []crawler.FileEntry) (facts string, projectName st
 
 	const (
 		maxBytesPerDoc = 2000 // enough for title + intro + first feature list
-		maxDocs        = 3   // README + 2 more
+		maxDocs        = 3    // README + 2 more
 	)
 
 	var b strings.Builder

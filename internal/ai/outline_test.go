@@ -261,7 +261,7 @@ func TestCleanHeading(t *testing.T) {
 		{"**Bold Title**", "Bold Title"},
 		{"LegalMind AI", "LegalMind AI"},
 		{"🔒 Security", "Security"},
-		{"§43a BRAO", "§43a BRAO"},       // § should be preserved
+		{"§43a BRAO", "§43a BRAO"},        // § should be preserved
 		{"2. Das Problem", "Das Problem"}, // numbered prefix stripped
 		{"10. Implementierungs-Roadmap", "Implementierungs-Roadmap"},
 	}

@@ -1,54 +1,57 @@
 <br>
 <p align="center">
-<a href="#" target="_blank">
-<img src="https://raw.githubusercontent.com/Zafer83/glimpse/main/glimpse.png" alt="Slidev"  width="250"/>
-</a>
+  <a href="https://github.com/Zafer83/glimpse" target="_blank">
+    <img src="https://raw.githubusercontent.com/Zafer83/glimpse/main/glimpse.png" alt="Glimpse" width="250"/>
+  </a>
 </p>
 
 <p align="center">
-Glimpse is an AI-driven Go CLI that turns source code into Slidev presentations.
+  Glimpse is an AI-driven Go CLI that turns source code into Slidev presentations.
 </p>
 
 <p align="center">
   <a href="https://github.com/Zafer83/glimpse/releases">
     <img src="https://img.shields.io/github/v/release/Zafer83/glimpse?label=Latest%20Release&color=orange" alt="Latest Release">
   </a>
-
   <a href="https://goreportcard.com/report/github.com/Zafer83/glimpse">
     <img src="https://goreportcard.com/badge/github.com/Zafer83/glimpse" alt="Go Report Card">
   </a>
-
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache-2.0">
   </a>
-
   <a href="https://golang.org/doc/devel/release.html">
     <img src="https://img.shields.io/github/go-mod/go-version/Zafer83/glimpse" alt="Go Version">
   </a>
 </p>
-<br>
-
-<div align="center">
-</div>
-
 
 ## Features
 
-- Interactive CLI flow (path, theme, model, language, output)
-- Theme validation and auto-install for Slidev themes
-- Multi-provider support:
+- Interactive CLI flow (project path, theme, model, language, output file)
+- Non-interactive mode via flags for CI/CD and scripts
+- Multi-provider AI support:
   - OpenAI (`gpt-*`)
   - Gemini (`gemini-*`)
   - Anthropic (`claude-*`)
-  - Local LLM (`local` / `local/<model>` / `ollama/<model>`)
-- Automatic Slidev launch option after generation
-- Progress bar with ETA while AI analysis is running
-- Recursive source crawler with common folder exclusions
+  - Local LLM (`local`, `local/<model>`, `ollama/<model>`)
+- Slidev theme validation and auto-install for npm themes
+- Progress bar with ETA during AI analysis
+- Automatic Slidev startup option after generation
+- Recursive source crawler with documentation-first prioritization
 
-Terminal rendering behavior:
+Terminal behavior:
 
 - Linux/macOS: colored ANSI output enabled by default
 - Windows release binaries: plain fallback mode enabled automatically
+
+## Requirements
+
+- Go (version from `go.mod`)
+- `git`
+- `node` + `npm` (required to run Slidev and auto-install themes)
+
+For releases:
+
+- `gh` (GitHub CLI)
 
 ## Installation
 
@@ -61,330 +64,221 @@ go build -o glimpse ./cmd/glimpse
 
 ## Usage
 
-### Interactive Mode
-
-Start Glimpse without Flags — das Programm fragt alle Eingaben interaktiv ab:
+### Interactive mode
 
 ```bash
 ./glimpse
 ```
 
-### Non-Interactive Mode (CLI Flags)
-
-Alle Parameter können als Flags übergeben werden. Sobald `--path` gesetzt ist, läuft Glimpse vollständig non-interactive — ideal für Skripte, CI/CD und Automatisierung.
+### Non-interactive mode (flags)
 
 ```bash
-./glimpse --path ./my-project --model gpt-4o --api-key sk-... --theme seriph --lang en --output presentation.md --slidev
+./glimpse \
+  --path ./my-project \
+  --model gpt-4o \
+  --api-key "$OPENAI_API_KEY" \
+  --theme seriph \
+  --lang en \
+  --output slides.md \
+  --slidev
 ```
 
-### `./glimpse --help`
-
-Zeigt alle verfügbaren Flags:
-
-```
-Usage of glimpse:
-  -api-key string
-        API key (or set GLIMPSE_API_KEY env)
-  -lang string
-        Presentation language (default: de)
-  -local-url string
-        Local LLM base URL (default: http://localhost:11434)
-  -model string
-        AI model (e.g. gpt-4o, gemini-2.0-flash, local/qwen2.5-coder:7b)
-  -output string
-        Output file name (default: slides.md)
-  -path string
-        Project path to scan
-  -slidev
-        Auto-start Slidev after generation (non-interactive)
-  -theme string
-        Slidev theme (default: seriph)
-  -v    Print version and exit
-  -version
-        Print version and exit
-```
-
-### Flag Reference
-
-| Flag | Typ | Default | Beschreibung |
-|------|-----|---------|--------------|
-| `--path` | string | *(keiner)* | Pfad zum Projekt-Verzeichnis. **Pflicht** für Non-Interactive Mode. Unterstützt relative Pfade und `~/`. |
-| `--model` | string | `gemini-2.0-flash` | AI-Modell. Siehe [Model examples](#model-examples) für gültige Werte. |
-| `--api-key` | string | *(keiner)* | API-Key für Cloud-Modelle (OpenAI, Gemini, Anthropic). Alternativ via Umgebungsvariable `GLIMPSE_API_KEY`. Nicht benötigt für lokale Modelle. |
-| `--theme` | string | `seriph` | Slidev-Theme. Offizielle Kurzform (`seriph`, `default`, `bricks`) oder voller npm-Paketname. |
-| `--lang` | string | `de` | Sprache der generierten Präsentation (z.B. `de`, `en`, `fr`, `tr`). |
-| `--output` | string | `slides.md` | Dateiname der erzeugten Slidev-Markdown-Datei. |
-| `--local-url` | string | `http://localhost:11434` | Basis-URL des lokalen LLM-Servers (Ollama oder llama.cpp). |
-| `--slidev` | bool | `false` | Startet Slidev automatisch nach der Generierung. Nur im Non-Interactive Mode relevant. |
-| `--version`, `-v` | bool | `false` | Gibt die Version aus und beendet das Programm. |
-
-### Beispiele
-
-**Cloud-Modell mit OpenAI:**
+### CLI help
 
 ```bash
-./glimpse --path ~/Projects/my-app --model gpt-4o --api-key sk-abc123 --lang en
+./glimpse --help
 ```
 
-**Lokales Modell mit Ollama (kein API-Key nötig):**
+Current flags:
 
-```bash
-./glimpse --path ./my-project --model local/qwen2.5-coder:7b
+```text
+-api-key string
+      API key (or set GLIMPSE_API_KEY env)
+-lang string
+      Presentation language (default: de)
+-local-url string
+      Local LLM base URL (default: http://localhost:8080)
+-model string
+      AI model (e.g. gpt-4o, gemini-2.0-flash, local/qwen2.5-coder:7b)
+-output string
+      Output file name (default: slides.md)
+-path string
+      Project path to scan
+-slidev
+      Auto-start Slidev after generation (non-interactive)
+-theme string
+      Slidev theme (default: seriph)
+-v
+      Print version and exit
+-version
+      Print version and exit
 ```
 
-**Automatische Slidev-Präsentation starten:**
+### Flag reference
 
-```bash
-./glimpse --path ./my-project --model local --slidev --output demo.md
-```
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--path` | string | *(none)* | Project directory to scan. Required for non-interactive mode. Supports relative paths and `~/`. |
+| `--model` | string | `gemini-2.0-flash` | AI model identifier. |
+| `--api-key` | string | *(none)* | Required for cloud models; optional for local models. |
+| `--theme` | string | `seriph` | Slidev theme name/package. |
+| `--lang` | string | `de` | Output language for generated slides. |
+| `--output` | string | `slides.md` | Output markdown filename. |
+| `--local-url` | string | `http://localhost:8080` | Base URL for local LLM servers. |
+| `--slidev` | bool | `false` | Auto-start Slidev after generation (non-interactive mode). |
+| `--version`, `-v` | bool | `false` | Print version and exit. |
 
-**API-Key über Umgebungsvariable:**
-
-```bash
-export GLIMPSE_API_KEY=sk-abc123
-./glimpse --path ./my-project --model gpt-4o
-```
-
-**Version anzeigen:**
-
-```bash
-./glimpse --version
-./glimpse -v
-```
-
-### CI/CD & Pipeline Integration
-
-Glimpse lässt sich vollständig non-interaktiv in CI/CD-Pipelines einbinden.
-Sobald `--path` gesetzt ist, werden keine interaktiven Eingaben erwartet.
-
-**GitHub Actions Beispiel:**
-
-```yaml
-- name: Generate presentation
-  env:
-    GLIMPSE_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  run: |
-    ./glimpse --path . --model gpt-4o --theme seriph --lang en --output slides.md
-```
-
-**Shell-Skript Beispiel (mit Ollama):**
-
-```bash
-#!/bin/bash
-set -e
-./glimpse --path "$PROJECT_DIR" --model local --output slides.md
-echo "Presentation generated: slides.md"
-```
-
-**Umgebungsvariablen:**
-
-| Variable | Beschreibung |
-|----------|-------------|
-| `GLIMPSE_API_KEY` | API-Key (Alternative zu `--api-key` Flag) |
-| `NO_COLOR` | Deaktiviert Farb-Ausgabe (Standard für CI) |
-| `GLIMPSE_NO_ANSI` | Deaktiviert ANSI-Escape-Codes explizit |
-
-**Exit-Codes:**
-
-| Code | Bedeutung |
-|------|-----------|
-| `0` | Erfolgreich |
-| `1` | Fehler (fehlender API-Key, Scan-Fehler, AI-Fehler) |
-| `130` | Abbruch durch Benutzer (Ctrl+C) |
-
-### Supported File Types
-
-Glimpse erkennt und priorisiert automatisch:
-
-**Dokumentation (höchste Priorität — 60% Budget):**
-
-| Format | Endung |
-|--------|--------|
-| Markdown | `.md`, `.mdx` |
-| Plain Text | `.txt`, `.rst` |
-| Word | `.docx` (native Go-Extraktion) |
-| PDF | `.pdf` (native Go-Extraktion) |
-
-**Business Logic (35% Budget):**
-`.go`, `.js`, `.ts`, `.jsx`, `.tsx`, `.py`, `.java`, `.rb`, `.php`, `.cs`, `.cpp`, `.c`, `.h`, `.rs`, `.sql`
-
-**Support-Dateien (5% Budget):**
-Tests, Configs, Migrations, Generated Code — werden automatisch klassifiziert und nachrangig behandelt.
-
-## Versioning
-
-Glimpse uses `Major.Minor.Build`.
-
-- Runtime output:
-  - `./glimpse --version`
-- Base version is stored in `VERSION_BASE` (`Major.Minor`).
-- Build number is persisted in `.version/build_counter` and auto-incremented by scripts.
-
-Automatic local build with version increment:
-
-```bash
-scripts/build.sh
-```
-
-Check current/next version manually:
-
-```bash
-scripts/version.sh current
-scripts/version.sh next
-```
-
-## Release Script
-
-Build all release binaries from macOS/Linux with one command (auto version):
-
-```bash
-scripts/release.sh
-```
-
-Optional manual release version:
-
-```bash
-scripts/release.sh 1.2.3
-```
-
-This creates artifacts in a versioned folder:
-
-- `dist/v1.2.3/darwin-amd64/glimpse`
-- `dist/v1.2.3/darwin-arm64/glimpse`
-- `dist/v1.2.3/linux-amd64/glimpse`
-- `dist/v1.2.3/linux-arm64/glimpse`
-- `dist/v1.2.3/windows-amd64/glimpse.exe`
-- `dist/v1.2.3/windows-arm64/glimpse.exe`
-- `dist/v1.2.3/checksums.txt`
-
-### Model examples
+## Model examples
 
 - OpenAI: `gpt-4o`
 - Gemini: `gemini-2.0-flash`
 - Anthropic: `claude-3-5-sonnet-latest`
 - Local:
-  - `local` (defaults to `qwen2.5-coder:7b`)
+  - `local` (auto-detects or defaults to `qwen2.5-coder:7b`)
   - `local/qwen2.5-coder:14b`
+  - `ollama/llama3.2`
 
-### Local server URL input
+## Local LLM setup
 
-If you choose a local model, Glimpse asks for:
+If you choose a local model, Glimpse asks for `Local LLM URL`.
 
-- `Local LLM URL (e.g. http://localhost:11434)`
+Recommended values:
 
-For Ollama, use:
+- `http://localhost:8080` for OpenAI-compatible servers (e.g. `llama.cpp` server)
+- `http://localhost:11434` for Ollama
 
-- `http://localhost:11434` (Glimpse uses `/api/chat`)
+Notes:
 
-For `llama.cpp` OpenAI-compatible server, use:
+- Glimpse first tries OpenAI-compatible `/v1/chat/completions`.
+- If that fails, it falls back to Ollama `/api/chat`.
+- API key is optional in local mode.
 
-- `http://localhost:8080` (Glimpse uses `/v1/chat/completions`)
+### Quick Ollama setup
 
-## Local Mode (Ollama) — no API key required
-
-Glimpse works fully offline with [Ollama](https://ollama.com). No OpenAI, Gemini, or Anthropic account needed.
-
-### Quick setup
-
-**Mac / Linux:**
+macOS / Linux:
 
 ```bash
 ./scripts/setup-ollama.sh
 ```
 
-Install a specific model (optional — default is `qwen2.5-coder:7b`):
-
-```bash
-./scripts/setup-ollama.sh llama3.2
-./scripts/setup-ollama.sh qwen2.5-coder:14b
-```
-
-**Windows (PowerShell, run as Administrator):**
+Windows (PowerShell as Admin):
 
 ```powershell
 .\scripts\setup-ollama.ps1
 ```
 
-Install a specific model:
+## Slidev theme validation
 
-```powershell
-.\scripts\setup-ollama.ps1 llama3.2
-.\scripts\setup-ollama.ps1 qwen2.5-coder:14b
-```
+Theme resolution behavior:
 
-The script will:
-1. Install Ollama if it is not already installed
-2. Start the Ollama server in the background
-3. Download the chosen model
-4. Print the exact values to enter in Glimpse
-
-### Manual setup
-
-If you prefer to set up Ollama yourself:
+- Built-in direct names: `default`, `seriph`
+- Short custom names are resolved as:
+  - `@slidev/theme-<name>`
+  - `slidev-theme-<name>`
+- Full package names are accepted directly.
+- If the package exists but is not installed locally, Glimpse installs it with:
 
 ```bash
-# 1. Install Ollama
-# macOS:  brew install ollama  OR  curl -fsSL https://ollama.com/install.sh | sh
-# Linux:  curl -fsSL https://ollama.com/install.sh | sh
-# Windows: download from https://ollama.com/download
-
-# 2. Start the server
-ollama serve
-
-# 3. Pull a model (in a separate terminal)
-ollama pull qwen2.5-coder:7b
+npm install -D <theme-package>
 ```
 
-### Recommended models
+## Quality gate (local + CI)
 
-| Model | Size | Best for |
-|---|---|---|
-| `qwen2.5-coder:7b` | ~4 GB | Code analysis — good default |
-| `qwen2.5-coder:14b` | ~8 GB | Higher quality, needs more RAM |
-| `llama3.2` | ~2 GB | Fast, lower RAM |
-| `codellama:7b` | ~4 GB | Alternative code model |
+Run the same checks locally that CI runs:
 
-### Glimpse settings for Ollama
-
-When Glimpse prompts you, enter:
-
-```
-AI Model:      local
-Local LLM URL: http://localhost:11434
-API Key:        (leave empty)
+```bash
+./scripts/check.sh
 ```
 
-Or use a specific model name:
+This verifies:
 
+- `gofmt` formatting (`gofmt -l` must be empty)
+- `go test ./...`
+- `go build ./cmd/glimpse`
+
+GitHub Actions CI (`.github/workflows/ci.yml`) runs this gate on:
+
+- pushes to `main`
+- pull requests
+
+## Build and release
+
+### Local build
+
+```bash
+scripts/build.sh
 ```
-AI Model:      local/qwen2.5-coder:7b
+
+Optional explicit version override:
+
+```bash
+scripts/build.sh 1.2.3
 ```
 
-## Slidev Theme Validation
+### Release script
 
-- `default` and `seriph` work directly.
-- For custom themes, Glimpse validates package existence on npm.
-- If valid but missing locally, Glimpse auto-installs it via:
-  - `npm install -D <theme-package>`
-- If the theme name is invalid (spelling/package), Glimpse exits with a clear error.
+```bash
+scripts/release.sh <version|patch|minor|major>
+```
 
-### Official vs Community Themes
+Examples:
 
-- Official themes can be entered as short names:
-  - `seriph`, `default`, `bricks`, `shibainu`, `apple-basic`
-- Community themes should be entered as full npm package names:
-  - Example: `@your-scope/slidev-theme-awesome`
+```bash
+scripts/release.sh 1.0.0
+scripts/release.sh patch
+scripts/release.sh minor
+scripts/release.sh major
+```
 
-How Glimpse resolves theme input:
+What `scripts/release.sh` does:
 
-- If you enter a short name, Glimpse maps it to `@slidev/theme-<name>`.
-- If you enter a full package name (`@scope/pkg` or `scope/pkg`), Glimpse uses it as provided.
+1. Runs `scripts/check.sh`
+2. Verifies you are on `main` with a clean working tree
+3. Resolves release version (explicit or auto-bump from latest tag)
+4. Cross-compiles binaries for:
+   - `darwin/amd64`
+   - `darwin/arm64`
+   - `linux/amd64`
+   - `linux/arm64`
+   - `windows/amd64`
+5. Generates checksums
+6. Creates and pushes git tag
+7. Creates GitHub release with artifacts
 
-## Slidev
+Artifacts are generated under:
 
-After generating `slides.md`, Glimpse can start Slidev automatically using:
+- `dist/v<version>/glimpse-v<version>-darwin-amd64`
+- `dist/v<version>/glimpse-v<version>-darwin-arm64`
+- `dist/v<version>/glimpse-v<version>-linux-amd64`
+- `dist/v<version>/glimpse-v<version>-linux-arm64`
+- `dist/v<version>/glimpse-v<version>-windows-amd64.exe`
+- `dist/v<version>/checksums.txt`
 
-- `npx --yes @slidev/cli <file>`
+## Slidev startup
+
+After generating slides, Glimpse can start Slidev via:
+
+```bash
+npx --yes @slidev/cli <slides-file>
+```
+
+## Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `GLIMPSE_API_KEY` | API key for cloud models (alternative to `--api-key`) |
+| `UNSPLASH_IMAGE_URL` | URL template for image keyword expansion (`{keywords}` placeholder) |
+| `NO_COLOR` | Disable colored output |
+| `GLIMPSE_NO_ANSI` | Explicitly disable ANSI escape output |
+| `FORCE_ANSI` | Force ANSI output on Windows (advanced use) |
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Runtime error |
+| `130` | Interrupted by user (`Ctrl+C`) |
 
 ## Author
 

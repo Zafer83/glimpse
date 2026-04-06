@@ -43,11 +43,11 @@ type OutlineSection struct {
 
 // narrativeSlot defines a presentation topic category with keyword matching.
 type narrativeSlot struct {
-	Name    string
+	Name     string
 	Keywords []string
-	Labels  map[string]string // lang code → section divider title
-	ImageKW string            // default image keywords for this topic
-	Layout  string            // preferred layout for first content slide
+	Labels   map[string]string // lang code → section divider title
+	ImageKW  string            // default image keywords for this topic
+	Layout   string            // preferred layout for first content slide
 }
 
 // defaultNarrativeSlots defines the canonical presentation narrative order.

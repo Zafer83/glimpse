@@ -50,6 +50,7 @@ const (
 	progressInitialPct    = 8.0
 	progressMaxPct        = 97.0
 	progressCurveExponent = 10.0
+	defaultLocalLLMURL    = "http://localhost:8080"
 )
 
 var (
@@ -93,11 +94,6 @@ func normalizeTripletVersion(raw string) (string, bool) {
 
 func resolvedVersion() string {
 	if v, ok := normalizeTripletVersion(version); ok {
-		if v != "0.0.0" {
-			return v
-		}
-	}
-	if v, ok := autoVersionFromGit(); ok {
 		return v
 	}
 	return "0.0.0"
@@ -159,37 +155,6 @@ func isInterruptErr(err error) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "interrupted")
-}
-
-// --- Git helpers ---
-func gitOutput(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func autoVersionFromGit() (string, bool) {
-	// Use the latest semver git tag as the version source-of-truth.
-	// "git describe --tags --match v*" returns e.g. "v0.9.1" or "v0.9.1-3-gabcdef".
-	desc, err := gitOutput("describe", "--tags", "--match", "v[0-9]*")
-	if err != nil {
-		return "", false
-	}
-	desc = strings.TrimPrefix(desc, "v")
-	if v, ok := normalizeTripletVersion(desc); ok {
-		return v, true
-	}
-	// If describe returned something like "0.9.1-3-gabcdef" (commits after tag),
-	// extract just the base version.
-	if parts := strings.SplitN(desc, "-", 2); len(parts) >= 1 {
-		if v, ok := normalizeTripletVersion(parts[0]); ok {
-			return v + "-dev", true
-		}
-	}
-	return "", false
 }
 
 // --- User input ---
@@ -579,7 +544,7 @@ func promptUserConfig(line *liner.State, reader *bufio.Reader, workDir string) *
 	localBaseURL := ""
 	needsAPIKey := ai.RequiresAPIKey(model)
 	if !needsAPIKey {
-		localBaseURL = ask(line, reader, "Local LLM URL", "http://localhost:8080")
+		localBaseURL = ask(line, reader, "Local LLM URL", defaultLocalLLMURL)
 	}
 
 	apiPrompt := "API Key (OpenAI/Gemini/Anthropic)"
@@ -726,7 +691,7 @@ var (
 	flagTheme    = flag.String("theme", "", "Slidev theme (default: seriph)")
 	flagLang     = flag.String("lang", "", "Presentation language (default: de)")
 	flagAPIKey   = flag.String("api-key", "", "API key (or set GLIMPSE_API_KEY env)")
-	flagLocalURL = flag.String("local-url", "", "Local LLM base URL (default: http://localhost:11434)")
+	flagLocalURL = flag.String("local-url", "", "Local LLM base URL (default: http://localhost:8080)")
 	flagSlidev   = flag.Bool("slidev", false, "Auto-start Slidev after generation (non-interactive)")
 )
 
@@ -741,7 +706,7 @@ func configFromFlags() *config.Config {
 	theme := stringDefault(*flagTheme, "seriph")
 	lang := stringDefault(*flagLang, "de")
 	output := stringDefault(*flagOutput, "slides.md")
-	localURL := stringDefault(*flagLocalURL, "http://localhost:11434")
+	localURL := stringDefault(*flagLocalURL, defaultLocalLLMURL)
 
 	apiKey := *flagAPIKey
 	if apiKey == "" {

@@ -31,6 +31,7 @@ check_deps() {
   command -v go  >/dev/null 2>&1 || die "go is not installed"
   command -v git >/dev/null 2>&1 || die "git is not installed"
   command -v gh  >/dev/null 2>&1 || die "gh (GitHub CLI) is not installed — brew install gh"
+  [[ -x "${ROOT_DIR}/scripts/check.sh" ]] || die "scripts/check.sh not found or not executable"
 }
 
 check_clean() {
@@ -71,6 +72,9 @@ bump_version() {
 # ---------- main ----------
 
 check_deps
+
+echo "Running quality gate..."
+"${ROOT_DIR}/scripts/check.sh"
 
 if [[ $# -ne 1 ]]; then
   echo "Usage: scripts/release.sh <version|patch|minor|major>"
@@ -161,11 +165,6 @@ echo "Generating checksums..."
   cd "${RELEASE_DIR}"
   shasum -a 256 glimpse-* > checksums.txt
 )
-
-# ---------- tests ----------
-
-echo "Running tests..."
-(cd "${ROOT_DIR}" && go test ./... -count=1) || die "Tests failed. Aborting release."
 
 # ---------- tag & push ----------
 
