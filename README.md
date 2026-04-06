@@ -1,12 +1,36 @@
-[![Glimpse Logo](https://raw.githubusercontent.com/Zafer83/glimpse/main/glimpse.png)](https://github.com/Zafer83/glimpse)
+<br>
+<p align="center">
+<a href="#" target="_blank">
+<img src="https://raw.githubusercontent.com/Zafer83/glimpse/main/glimpse.png" alt="Slidev"  width="250"/>
+</a>
+</p>
 
-# Glimpse ✨
-
-[![Go Report Card](https://goreportcard.com/badge/github.com/Zafer83/glimpse)](https://goreportcard.com/report/github.com/Zafer83/glimpse)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/Zafer83/glimpse)](https://golang.org/doc/devel/release.html)
-
+<p align="center">
 Glimpse is an AI-driven Go CLI that turns source code into Slidev presentations.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Zafer83/glimpse/releases">
+    <img src="https://img.shields.io/github/v/release/Zafer83/glimpse?label=Latest%20Release&color=orange" alt="Latest Release">
+  </a>
+
+  <a href="https://goreportcard.com/report/github.com/Zafer83/glimpse">
+    <img src="https://goreportcard.com/badge/github.com/Zafer83/glimpse" alt="Go Report Card">
+  </a>
+
+  <a href="https://opensource.org/licenses/Apache-2.0">
+    <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache-2.0">
+  </a>
+
+  <a href="https://golang.org/doc/devel/release.html">
+    <img src="https://img.shields.io/github/go-mod/go-version/Zafer83/glimpse" alt="Go Version">
+  </a>
+</p>
+<br>
+
+<div align="center">
+</div>
+
 
 ## Features
 
