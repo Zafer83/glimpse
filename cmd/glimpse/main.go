@@ -572,7 +572,7 @@ func promptUserConfig(line *liner.State, reader *bufio.Reader, workDir string) *
 		os.Exit(1)
 	}
 
-	model := ask(line, reader, "AI Model (gpt-4o, gemini-2.0-flash, claude-3-5-sonnet-latest, local/qwen2.5-coder:7b)", "gemini-2.0-flash")
+	model := ask(line, reader, "AI Model (gpt-4o, gemini-2.0-flash, claude-3-5-sonnet-latest, local)", "gemini-2.0-flash")
 	lang := ask(line, reader, "Language", "de")
 	out := ask(line, reader, "File Name", "slides.md")
 

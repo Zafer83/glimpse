@@ -1,4 +1,7 @@
-![Glimpse Banner](./glimpse.png)
+<a href="https://github.com/Zafer83/glimpse">
+  <img src="https://raw.githubusercontent.com/Zafer83/glimpse/main/glimpse.png" alt="Glimpse Logo" width="300">
+</a>
+
 # Glimpse ✨
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/Zafer83/glimpse)](https://goreportcard.com/report/github.com/Zafer83/glimpse)
